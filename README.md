@@ -4,7 +4,8 @@ OpenSearch/Elasticsearch-compatible REST API, but it's just SQLite under the hoo
 
 ## Why?
 
-For fun (jk, i fed up with `SearchPhaseExecutionException[Failed to execute phase [query_fetch], all shards failed]`)
+i fed up with `SearchPhaseExecutionException[Failed to execute phase [xxx], ALL SHARDS FAILED!!11!]`
+
 
 ## Quick Start
 

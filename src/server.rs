@@ -22,6 +22,8 @@ pub fn build_router(registry: Arc<IndexRegistry>) -> Router {
         .route("/_cat/indices", get(cluster::cat_indices))
         // Bulk endpoint
         .route("/_bulk", post(bulk::bulk))
+        // Multi-search
+        .route("/_msearch", post(search::msearch).get(search::msearch))
         // Multi-get (global)
         .route("/_mget", post(multi::mget).get(multi::mget))
         // Index templates (stubs)

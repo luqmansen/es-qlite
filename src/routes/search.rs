@@ -1,3 +1,4 @@
+use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -19,6 +20,7 @@ pub struct SearchQueryParams {
     pub from: Option<usize>,
     pub size: Option<usize>,
     pub typed_keys: Option<bool>,
+    pub rest_total_hits_as_int: Option<bool>,
 }
 
 pub async fn search(
@@ -33,6 +35,19 @@ pub async fn search(
     }
 }
 
+/// Serialize a SearchResponse, optionally flattening hits.total to a plain integer.
+fn search_response_to_json(resp: SearchResponse, total_as_int: bool) -> Response {
+    if !total_as_int {
+        return Json(resp).into_response();
+    }
+    let mut val = serde_json::to_value(&resp).unwrap();
+    if let Some(total_obj) = val.get("hits").and_then(|h| h.get("total")) {
+        let total_int = total_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+        val["hits"]["total"] = serde_json::Value::from(total_int);
+    }
+    Json(val).into_response()
+}
+
 async fn search_inner(
     registry: Arc<IndexRegistry>,
     index: String,
@@ -40,6 +55,7 @@ async fn search_inner(
     body: Option<Json<SearchRequest>>,
 ) -> Result<Response, EsError> {
     let req = body.map(|b| b.0).unwrap_or_default();
+    let total_as_int = params.rest_total_hits_as_int.unwrap_or(false);
 
     // Query params override body values
     let from = params.from.or(req.from).unwrap_or(0);
@@ -92,14 +108,16 @@ async fn search_inner(
             } else {
                 None
             };
-            return Ok(Json(SearchResponse {
-                took: 0,
-                timed_out: false,
-                _shards: ShardsInfo::ok(),
-                hits: envelope,
-                aggregations,
-            })
-            .into_response());
+            return Ok(search_response_to_json(
+                SearchResponse {
+                    took: 0,
+                    timed_out: false,
+                    _shards: ShardsInfo::ok(),
+                    hits: envelope,
+                    aggregations,
+                },
+                total_as_int,
+            ));
         }
         return Err(EsError::IndexNotFound(index));
     }
@@ -140,14 +158,16 @@ async fn search_inner(
 
         let took = start.elapsed().as_millis() as u64;
 
-        return Ok(Json(SearchResponse {
-            took,
-            timed_out: false,
-            _shards: ShardsInfo::ok(),
-            hits,
-            aggregations,
-        })
-        .into_response());
+        return Ok(search_response_to_json(
+            SearchResponse {
+                took,
+                timed_out: false,
+                _shards: ShardsInfo::ok(),
+                hits,
+                aggregations,
+            },
+            total_as_int,
+        ));
     }
 
     // Multi-index search - merge results
@@ -245,14 +265,16 @@ async fn search_inner(
         max_score,
         hits: paginated,
     };
-    Ok(Json(SearchResponse {
-        took,
-        timed_out: false,
-        _shards: ShardsInfo::ok(),
-        hits: envelope,
-        aggregations,
-    })
-    .into_response())
+    Ok(search_response_to_json(
+        SearchResponse {
+            took,
+            timed_out: false,
+            _shards: ShardsInfo::ok(),
+            hits: envelope,
+            aggregations,
+        },
+        total_as_int,
+    ))
 }
 
 pub async fn count(
@@ -374,4 +396,112 @@ async fn delete_by_query_inner(
         "failures": []
     }))
     .into_response())
+}
+
+// ─── Multi-Search (_msearch) ─────────────────────────────────────────────
+
+pub async fn msearch(
+    State(registry): State<Arc<IndexRegistry>>,
+    Query(params): Query<SearchQueryParams>,
+    body: Bytes,
+) -> Response {
+    match msearch_inner(registry, params, body).await {
+        Ok(r) => r,
+        Err(e) => e.into_response(),
+    }
+}
+
+async fn msearch_inner(
+    registry: Arc<IndexRegistry>,
+    params: SearchQueryParams,
+    body: Bytes,
+) -> Result<Response, EsError> {
+    let body_str = String::from_utf8_lossy(&body);
+    let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();
+    let total_as_int = params.rest_total_hits_as_int.unwrap_or(false);
+
+    let mut responses: Vec<serde_json::Value> = Vec::new();
+
+    let mut i = 0;
+    while i + 1 < lines.len() {
+        // Header line: {"index": "some-index", "ignore_unavailable": true, ...}
+        let header: serde_json::Value =
+            serde_json::from_str(lines[i]).unwrap_or(serde_json::json!({}));
+        let search_body: SearchRequest = serde_json::from_str(lines[i + 1]).unwrap_or_default();
+        i += 2;
+
+        // Extract index from header (ES accepts both "index" and "indices")
+        let index_val = header.get("index").or_else(|| header.get("indices"));
+        let index = index_val
+            .and_then(|v| match v {
+                serde_json::Value::String(s) => Some(s.clone()),
+                serde_json::Value::Array(arr) => {
+                    let names: Vec<String> = arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect();
+                    if names.is_empty() {
+                        None
+                    } else {
+                        Some(names.join(","))
+                    }
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+
+        // Build a SearchQueryParams for this sub-request
+        let sub_params = SearchQueryParams {
+            from: search_body.from,
+            size: search_body.size,
+            typed_keys: params.typed_keys,
+            rest_total_hits_as_int: params.rest_total_hits_as_int,
+        };
+
+        // Execute the search
+        let result =
+            search_inner(registry.clone(), index, sub_params, Some(Json(search_body))).await;
+
+        match result {
+            Ok(resp) => {
+                // Extract the JSON body from the response
+                let (parts, body) = resp.into_parts();
+                let body_bytes = axum::body::to_bytes(body, usize::MAX)
+                    .await
+                    .unwrap_or_default();
+                let mut json_val: serde_json::Value =
+                    serde_json::from_slice(&body_bytes).unwrap_or(serde_json::json!({}));
+                json_val["status"] = serde_json::json!(parts.status.as_u16());
+                responses.push(json_val);
+            }
+            Err(e) => {
+                // Return error as a response item
+                let status = match &e {
+                    EsError::IndexNotFound(_) => 404,
+                    _ => 400,
+                };
+                responses.push(serde_json::json!({
+                    "error": {
+                        "type": "search_phase_execution_exception",
+                        "reason": e.to_string()
+                    },
+                    "status": status
+                }));
+            }
+        }
+    }
+
+    // Apply rest_total_hits_as_int to each response if needed
+    if total_as_int {
+        for resp in &mut responses {
+            if let Some(total_obj) = resp.get("hits").and_then(|h| h.get("total")) {
+                if total_obj.is_object() {
+                    let total_int = total_obj.get("value").and_then(|v| v.as_u64()).unwrap_or(0);
+                    resp["hits"]["total"] = serde_json::Value::from(total_int);
+                }
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "responses": responses })).into_response())
 }

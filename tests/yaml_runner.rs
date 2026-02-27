@@ -432,8 +432,8 @@ impl TestRunner {
         }
 
         if let Some(body_val) = body {
-            // For bulk, we need NDJSON format
-            if api == "bulk" {
+            // For bulk and msearch, we need NDJSON format
+            if api == "bulk" || api == "msearch" {
                 let ndjson = yaml_to_ndjson(body_val);
                 request = request
                     .header("Content-Type", "application/x-ndjson")
@@ -1226,6 +1226,8 @@ const EXPECTED_PASS: &[(&str, &str)] = &[
         "search/80_indices_options.yml",
         "Missing index date math with catch",
     ),
+    ("search/80_indices_options.yml", "Missing index"),
+    ("search/80_indices_options.yml", "Closed index"),
     // ─── search.aggregation ─────────────────────────────────────────────────
     ("search.aggregation/20_terms.yml", "No field or script"),
     ("search.aggregation/250_moving_fn.yml", "Bad window"),
@@ -1754,9 +1756,7 @@ const SKIP_FILES: &[(&str, &str)] = &[
     ("termvectors/30_realtime.yml", "termvectors not supported"),
     ("mtermvectors/10_basic.yml", "mtermvectors not supported"),
     // Multi-search
-    ("msearch/10_basic.yml", "msearch not supported"),
-    ("msearch/11_status.yml", "msearch not supported"),
-    ("msearch/20_typed_keys.yml", "msearch not supported"),
+    // msearch is now supported (basic implementation)
     // Scripts
     ("scripts/20_get_script_context.yml", "scripts not supported"),
     (

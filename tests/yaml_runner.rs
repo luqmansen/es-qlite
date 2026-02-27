@@ -1,7 +1,7 @@
-//! YAML REST API test runner for es-sqlite
+//! YAML REST API test runner for es-qlite
 //!
 //! Runs a subset of the OpenSearch/Elasticsearch YAML test specs against a live
-//! es-sqlite server. The server is started automatically.
+//! es-qlite server. The server is started automatically.
 //!
 #![allow(clippy::await_holding_lock, dead_code)]
 //! Run with:
@@ -1631,7 +1631,7 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "response filtering not supported",
     ),
     // ─── Unsupported API categories (entire directories) ───────────────
-    // These APIs are outside the scope of es-sqlite's single-node SQLite architecture.
+    // These APIs are outside the scope of es-qlite's single-node SQLite architecture.
     // Cat APIs (except cat.indices which has its own skip entries above)
     (
         "cat.aliases/10_basic.yml",

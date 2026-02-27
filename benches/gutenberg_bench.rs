@@ -1,4 +1,4 @@
-//! Performance benchmark: es-sqlite vs OpenSearch with real Gutenberg books.
+//! Performance benchmark: es-qlite vs OpenSearch with real Gutenberg books.
 //!
 //! Downloads ~1500 books from Project Gutenberg (cached after first run),
 //! then benchmarks both engines at increasing document body sizes:
@@ -7,7 +7,7 @@
 //! Run with:
 //!   cargo bench --bench gutenberg_bench
 //!
-//! Requires Docker for OpenSearch. If Docker is unavailable, only es-sqlite
+//! Requires Docker for OpenSearch. If Docker is unavailable, only es-qlite
 //! is benchmarked.
 #![allow(clippy::type_complexity)]
 
@@ -37,7 +37,7 @@ fn measure_rss_kb(pid: u32) -> Option<u64> {
 
 /// Get OpenSearch RSS in KB by reading /proc/1/status inside the container.
 /// PID 1 in the container is the Java (OpenSearch) process.
-/// This reads VmRSS, the same metric as `ps -o rss=` on the host for es-sqlite.
+/// This reads VmRSS, the same metric as `ps -o rss=` on the host for es-qlite.
 fn measure_container_rss_kb(container: &str) -> Option<u64> {
     let output = Command::new("docker")
         .args(["exec", container, "cat", "/proc/1/status"])
@@ -196,17 +196,17 @@ struct StepResourceMetrics {
     disk_bytes: Option<u64>,
 }
 
-const CONTAINER_NAME: &str = "es-sqlite-bench-opensearch";
+const CONTAINER_NAME: &str = "es-qlite-bench-opensearch";
 const OPENSEARCH_IMAGE: &str = "opensearchproject/opensearch:2.17.1";
 const CACHE_DIR: &str = "tests/.cache/gutenberg_books";
 
 // ─── Server Management ──────────────────────────────────────────────────────
 
-/// Start es-sqlite and return (url, pid).
-fn start_es_sqlite() -> (String, u32) {
-    // Kill any existing es-sqlite on port 19222
+/// Start es-qlite and return (url, pid).
+fn start_es_qlite() -> (String, u32) {
+    // Kill any existing es-qlite on port 19222
     let _ = Command::new("pkill")
-        .args(["-f", "es-sqlite.*19222"])
+        .args(["-f", "es-qlite.*19222"])
         .output();
     std::thread::sleep(Duration::from_millis(500));
 
@@ -223,11 +223,11 @@ fn start_es_sqlite() -> (String, u32) {
     let _ = std::fs::remove_dir_all(&data_dir);
     std::fs::create_dir_all(&data_dir).ok();
 
-    let binary = format!("{}/target/release/es-sqlite", env!("CARGO_MANIFEST_DIR"));
+    let binary = format!("{}/target/release/es-qlite", env!("CARGO_MANIFEST_DIR"));
     let mut child = Command::new(&binary)
         .args(["--port", "19222", "--data-dir", &data_dir])
         .spawn()
-        .expect("start es-sqlite");
+        .expect("start es-qlite");
     let pid = child.id();
     // Detach so cleanup_servers() handles termination via pkill
     std::thread::spawn(move || {
@@ -247,13 +247,13 @@ fn start_es_sqlite() -> (String, u32) {
         }
         std::thread::sleep(Duration::from_millis(500));
     }
-    panic!("es-sqlite failed to start");
+    panic!("es-qlite failed to start");
 }
 
 fn start_opensearch() -> Option<String> {
     let docker_check = Command::new("docker").arg("info").output();
     if docker_check.is_err() || !docker_check.unwrap().status.success() {
-        eprintln!("Docker not available, will only benchmark es-sqlite");
+        eprintln!("Docker not available, will only benchmark es-qlite");
         return None;
     }
 
@@ -318,7 +318,7 @@ fn start_opensearch() -> Option<String> {
 
 fn cleanup_servers() {
     let _ = Command::new("pkill")
-        .args(["-f", "es-sqlite.*19222"])
+        .args(["-f", "es-qlite.*19222"])
         .output();
     let _ = Command::new("docker")
         .args(["rm", "-f", CONTAINER_NAME])
@@ -795,7 +795,7 @@ fn print_step_header(body_size: &str, doc_count: usize) {
         "│  Body size: {body_size:>6}  |  Documents: {doc_count:>4}                                     │"
     );
     eprintln!("├───────────────────────┬──────────────┬──────────────┬────────────────────┤");
-    eprintln!("│ Query                 │ es-sqlite    │ OpenSearch   │ Ratio              │");
+    eprintln!("│ Query                 │ es-qlite    │ OpenSearch   │ Ratio              │");
     eprintln!("├───────────────────────┼──────────────┼──────────────┼────────────────────┤");
 }
 
@@ -855,7 +855,7 @@ fn main() {
 
     rt.block_on(async {
         eprintln!("═══════════════════════════════════════════════════════════════");
-        eprintln!("  es-sqlite vs OpenSearch — Gutenberg Corpus Benchmark");
+        eprintln!("  es-qlite vs OpenSearch — Gutenberg Corpus Benchmark");
         eprintln!("═══════════════════════════════════════════════════════════════");
 
         // Load corpus
@@ -929,14 +929,14 @@ fn main() {
             ("100K", 100_000),
         ];
 
-        // ── Phase 1: es-sqlite (all steps) ──────────────────────────────
+        // ── Phase 1: es-qlite (all steps) ──────────────────────────────
         eprintln!();
         eprintln!("═══════════════════════════════════════════════════════════════");
-        eprintln!("  Phase 1: Benchmarking es-sqlite");
+        eprintln!("  Phase 1: Benchmarking es-qlite");
         eprintln!("═══════════════════════════════════════════════════════════════");
 
-        let (es_url, es_pid) = start_es_sqlite();
-        eprintln!("es-sqlite ready at {es_url} (pid {es_pid})");
+        let (es_url, es_pid) = start_es_qlite();
+        eprintln!("es-qlite ready at {es_url} (pid {es_pid})");
 
         // Start continuous memory sampler (500ms intervals)
         let es_sampler = MemorySampler::start(
@@ -949,7 +949,7 @@ fn main() {
         let es_idle_stats = es_sampler.snapshot();
         if let Some(ref stats) = es_idle_stats {
             eprintln!(
-                "  [es-sqlite] Idle RSS: {} (avg over {} samples)",
+                "  [es-qlite] Idle RSS: {} (avg over {} samples)",
                 format_memory_kb(stats.avg_kb),
                 stats.samples
             );
@@ -972,7 +972,7 @@ fn main() {
 
             eprintln!();
             eprintln!(
-                "  [es-sqlite] Step {} (avg {}, {} docs)",
+                "  [es-qlite] Step {} (avg {}, {} docs)",
                 label,
                 format_bytes(avg_body),
                 docs.len()
@@ -1020,14 +1020,14 @@ fn main() {
             });
         }
 
-        // Stop sampler and kill es-sqlite
+        // Stop sampler and kill es-qlite
         let _es_overall_stats = es_sampler.stop_and_report();
         let _ = Command::new("pkill")
-            .args(["-f", "es-sqlite.*19222"])
+            .args(["-f", "es-qlite.*19222"])
             .output();
 
         eprintln!();
-        eprintln!("  es-sqlite phase complete.");
+        eprintln!("  es-qlite phase complete.");
 
         // ── Phase 2: OpenSearch (fresh container per step) ───────────────
         let docker_check = Command::new("docker").arg("info").output();
@@ -1274,11 +1274,11 @@ fn main() {
 
         eprintln!(
             "  {:>10} │ {:>22} │ {:>22} │ {:>12} │ {:>12} │ {:>12} │ {:>12}",
-            "", "es-sqlite RSS", "OpenSearch RSS", "", "Disk", "", ""
+            "", "es-qlite RSS", "OpenSearch RSS", "", "Disk", "", ""
         );
         eprintln!(
             "  {:>10} │ {:>10} {:>10} │ {:>10} {:>10} │ {:>12} │ {:>12} │ {:>12} │ {:>12}",
-            "Body Size", "avg", "peak", "avg", "peak", "Ratio(avg)", "es-sqlite", "OpenSearch", "Ratio"
+            "Body Size", "avg", "peak", "avg", "peak", "Ratio(avg)", "es-qlite", "OpenSearch", "Ratio"
         );
         eprintln!(
             "  {:─>10}─┼─{:─>10}─{:─>10}─┼─{:─>10}─{:─>10}─┼─{:─>12}─┼─{:─>12}─┼─{:─>12}─┼─{:─>12}",

@@ -1,6 +1,6 @@
-//! Comparison integration tests: es-sqlite vs real OpenSearch.
+//! Comparison integration tests: es-qlite vs real OpenSearch.
 //!
-//! These tests run the same queries against both es-sqlite and a real OpenSearch
+//! These tests run the same queries against both es-qlite and a real OpenSearch
 //! Docker container, then compare:
 //! - Response structure (same keys, same value types)
 //! - Hit counts (identical)
@@ -23,7 +23,7 @@ use std::sync::OnceLock;
 
 // ─── Docker OpenSearch Management ───────────────────────────────────────────
 
-const CONTAINER_NAME: &str = "es-sqlite-test-opensearch";
+const CONTAINER_NAME: &str = "es-qlite-test-opensearch";
 const OPENSEARCH_IMAGE: &str = "opensearchproject/opensearch:2.17.1";
 
 static OPENSEARCH_URL: OnceLock<Option<String>> = OnceLock::new();
@@ -260,15 +260,15 @@ const SKIP_KEYS: &[&str] = &["took", "_seq_no", "_primary_term", "_version"];
 fn assert_same_structure(es: &Value, os: &Value, path: &str) {
     match (es, os) {
         (Value::Object(es_map), Value::Object(os_map)) => {
-            // Check that all OpenSearch keys exist in es-sqlite response
+            // Check that all OpenSearch keys exist in es-qlite response
             for key in os_map.keys() {
                 if SKIP_KEYS.contains(&key.as_str()) {
                     continue;
                 }
                 assert!(
                     es_map.contains_key(key),
-                    "es-sqlite missing key '{key}' at path '{path}'. \
-                     OpenSearch has: {:?}, es-sqlite has: {:?}",
+                    "es-qlite missing key '{key}' at path '{path}'. \
+                     OpenSearch has: {:?}, es-qlite has: {:?}",
                     os_map.keys().collect::<Vec<_>>(),
                     es_map.keys().collect::<Vec<_>>()
                 );
@@ -279,7 +279,7 @@ fn assert_same_structure(es: &Value, os: &Value, path: &str) {
             assert_eq!(
                 es_arr.len(),
                 os_arr.len(),
-                "Array length mismatch at '{path}': es-sqlite={}, opensearch={}",
+                "Array length mismatch at '{path}': es-qlite={}, opensearch={}",
                 es_arr.len(),
                 os_arr.len()
             );
@@ -295,7 +295,7 @@ fn assert_same_structure(es: &Value, os: &Value, path: &str) {
         (Value::Null, Value::Null) => {}
         _ => {
             panic!(
-                "Type mismatch at '{path}': es-sqlite={}, opensearch={}",
+                "Type mismatch at '{path}': es-qlite={}, opensearch={}",
                 value_type_name(es),
                 value_type_name(os)
             );
@@ -318,7 +318,7 @@ fn value_type_name(v: &Value) -> &'static str {
 fn assert_same_value(es: &Value, os: &Value, field: &str) {
     assert_eq!(
         es, os,
-        "Value mismatch for '{field}': es-sqlite={es}, opensearch={os}"
+        "Value mismatch for '{field}': es-qlite={es}, opensearch={os}"
     );
 }
 
@@ -338,7 +338,7 @@ fn assert_same_ranking(es_body: &Value, os_body: &Value) {
         .collect();
     assert_eq!(
         es_ids, os_ids,
-        "Ranking mismatch:\n  es-sqlite:   {es_ids:?}\n  opensearch:  {os_ids:?}"
+        "Ranking mismatch:\n  es-qlite:   {es_ids:?}\n  opensearch:  {os_ids:?}"
     );
 }
 
@@ -371,7 +371,7 @@ fn assert_similar_ranking(es_body: &Value, os_body: &Value, top_n: usize, min_ov
 
     assert!(
         overlap_pct >= min_overlap_pct,
-        "Ranking overlap too low: {:.0}% (need {:.0}%)\n  es-sqlite:   {:?}\n  opensearch:  {:?}",
+        "Ranking overlap too low: {:.0}% (need {:.0}%)\n  es-qlite:   {:?}\n  opensearch:  {:?}",
         overlap_pct * 100.0,
         min_overlap_pct * 100.0,
         es_ids,
@@ -381,7 +381,7 @@ fn assert_similar_ranking(es_body: &Value, os_body: &Value, top_n: usize, min_ov
     // If all IDs overlap but order differs, log it (BM25 tie-breaking may differ)
     if overlap == max_len && es_ids != os_ids {
         eprintln!(
-            "  Note: Same IDs, different order (BM25 tie-breaking):\n    es-sqlite:   {es_ids:?}\n    opensearch:  {os_ids:?}"
+            "  Note: Same IDs, different order (BM25 tie-breaking):\n    es-qlite:   {es_ids:?}\n    opensearch:  {os_ids:?}"
         );
     }
 }
@@ -390,7 +390,7 @@ fn assert_similar_ranking(es_body: &Value, os_body: &Value, top_n: usize, min_ov
 fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
     let es_buckets = es_agg["buckets"]
         .as_array()
-        .unwrap_or_else(|| panic!("es-sqlite: no buckets array in agg '{agg_name}'"));
+        .unwrap_or_else(|| panic!("es-qlite: no buckets array in agg '{agg_name}'"));
     let os_buckets = os_agg["buckets"]
         .as_array()
         .unwrap_or_else(|| panic!("opensearch: no buckets array in agg '{agg_name}'"));
@@ -398,7 +398,7 @@ fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
     assert_eq!(
         es_buckets.len(),
         os_buckets.len(),
-        "Bucket count mismatch for '{}': es-sqlite={}, opensearch={}",
+        "Bucket count mismatch for '{}': es-qlite={}, opensearch={}",
         agg_name,
         es_buckets.len(),
         os_buckets.len()
@@ -416,7 +416,7 @@ fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
 
     assert_eq!(
         es_map, os_map,
-        "Bucket values mismatch for '{agg_name}':\n  es-sqlite:   {es_map:?}\n  opensearch:  {os_map:?}"
+        "Bucket values mismatch for '{agg_name}':\n  es-qlite:   {es_map:?}\n  opensearch:  {os_map:?}"
     );
 }
 
@@ -596,7 +596,7 @@ async fn compare_structure_typed_keys() {
     // Both should have "sterms#statuses" key
     assert!(
         es_body["aggregations"]["sterms#statuses"].is_object(),
-        "es-sqlite missing sterms#statuses: {:?}",
+        "es-qlite missing sterms#statuses: {:?}",
         es_body["aggregations"]
     );
     assert!(

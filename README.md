@@ -1,4 +1,4 @@
-# es-sqlite
+# es-qlite
 
 OpenSearch/Elasticsearch-compatible REST API, but it's just SQLite under the hood. One binary, no JVM, no cluster config. Uses FTS5 for full-text search and pretends to be OpenSearch well enough that existing clients don't notice.
 
@@ -13,10 +13,10 @@ For fun (jk, i fed up with `SearchPhaseExecutionException[Failed to execute phas
 cargo build --release
 
 # run it (defaults to port 9200, data in ./data/)
-./target/release/es-sqlite
+./target/release/es-qlite
 
 # or tweak stuff
-./target/release/es-sqlite --port 9200 --data-dir ./data --host 0.0.0.0
+./target/release/es-qlite --port 9200 --data-dir ./data --host 0.0.0.0
 ```
 
 ```bash
@@ -304,7 +304,7 @@ _fts_ai/ad/au   -- Triggers to sync FTS5 with _source
 
 ## Benchmarks
 
-Benchmarked with 1600 real Project Gutenberg books at increasing body sizes (1K to 100K chars). Numbers are from [CI (GitHub Actions)](https://github.com/luqmansen/es-sqlite/actions/runs/22474762499/job/65099316921), not a tuned machine.
+Benchmarked with 1600 real Project Gutenberg books at increasing body sizes (1K to 100K chars). Numbers are from [CI (GitHub Actions)](https://github.com/luqmansen/es-qlite/actions/runs/22474762499/job/65099316921), not a tuned machine.
 
 ```bash
 cargo bench --bench gutenberg_bench  # needs Docker for OpenSearch comparison
@@ -312,7 +312,7 @@ cargo bench --bench gutenberg_bench  # needs Docker for OpenSearch comparison
 
 Corpus auto-downloads from [Gutendex](https://gutendex.com/) on first run and gets cached locally.
 
-**es-sqlite vs OpenSearch 2.17.1** (1600 books, GitHub Actions runner):
+**es-qlite vs OpenSearch 2.17.1** (1600 books, GitHub Actions runner):
 
 | Query | 1K (avg 999B) | 5K (avg 5.0KB) | 10K (avg 9.9KB) | 50K (avg 48.9KB) | 100K (avg 96.3KB) |
 |---|---|---|---|---|---|
@@ -337,11 +337,11 @@ Corpus auto-downloads from [Gutendex](https://gutendex.com/) on first run and ge
 
 #### Memory & Disk
 
-Also measured RSS memory. es-sqlite is one process, OpenSearch is a whole JVM. Not exactly apples-to-apples (native macOS vs Docker container), but you get the idea.
+Also measured RSS memory. es-qlite is one process, OpenSearch is a whole JVM. Not exactly apples-to-apples (native macOS vs Docker container), but you get the idea.
 
 **Memory (RSS)** (1593 books, OpenSearch JVM heap `-Xms512m -Xmx512m`):
 
-| Body Size | es-sqlite (avg) | es-sqlite (peak) | OpenSearch (avg) | OpenSearch (peak) | Ratio (avg) |
+| Body Size | es-qlite (avg) | es-qlite (peak) | OpenSearch (avg) | OpenSearch (peak) | Ratio (avg) |
 |---|---|---|---|---|---|
 | idle | **5.5 MB** | 6.5 MB | 1.0 GB | 1.1 GB | **195x less** |
 | 1K | **8.1 MB** | 11.3 MB | 1.1 GB | 1.1 GB | **138x less** |
@@ -350,7 +350,7 @@ Also measured RSS memory. es-sqlite is one process, OpenSearch is a whole JVM. N
 | 50K | **40.3 MB** | 48.1 MB | 1.1 GB | 1.1 GB | **27x less** |
 | 100K | **54.0 MB** | 79.4 MB | 1.1 GB | 1.3 GB | **22x less** |
 
-**basically:** OpenSearch's ~1 GB floor is the JVM heap, not the data. es-sqlite idles at **5.5 MB** because there's no VM. If your use case fits, you skip that whole tax. Memory grows sub-linearly since SQLite's page cache is bounded.
+**basically:** OpenSearch's ~1 GB floor is the JVM heap, not the data. es-qlite idles at **5.5 MB** because there's no VM. If your use case fits, you skip that whole tax. Memory grows sub-linearly since SQLite's page cache is bounded.
 
 ## API Compatibility
 
@@ -376,7 +376,7 @@ Tested with the [`opensearch` Rust crate](https://crates.io/crates/opensearch) v
 
 ## YAML REST API Spec Tests
 
-408 YAML spec files (114 categories) vendored from the [OpenSearch repo](https://github.com/opensearch-project/OpenSearch/tree/main/rest-api-spec/src/main/resources/rest-api-spec/test), run against es-sqlite.
+408 YAML spec files (114 categories) vendored from the [OpenSearch repo](https://github.com/opensearch-project/OpenSearch/tree/main/rest-api-spec/src/main/resources/rest-api-spec/test), run against es-qlite.
 
 ```
 Expected to pass:  114 tests   (regression = hard failure)

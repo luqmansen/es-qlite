@@ -1,6 +1,6 @@
-//! Integration tests for es-sqlite.
+//! Integration tests for es-qlite.
 //!
-//! These tests validate that es-sqlite correctly implements the
+//! These tests validate that es-qlite correctly implements the
 //! OpenSearch/Elasticsearch REST API, using both the official OpenSearch
 //! Rust client and raw HTTP requests.
 //!

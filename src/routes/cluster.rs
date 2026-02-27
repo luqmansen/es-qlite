@@ -10,9 +10,9 @@ use crate::storage::registry::IndexRegistry;
 
 pub async fn root_info() -> Response {
     Json(serde_json::json!({
-        "name": "es-sqlite",
+        "name": "es-qlite",
         "cluster_name": "opensearch-sqlite",
-        "cluster_uuid": "es-sqlite-local",
+        "cluster_uuid": "es-qlite-local",
         "version": {
             "distribution": "opensearch",
             "number": "2.17.1",

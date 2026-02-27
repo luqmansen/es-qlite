@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(
-    name = "es-sqlite",
+    name = "es-qlite",
     about = "Elasticsearch-compatible API over SQLite FTS5"
 )]
 pub struct Config {

@@ -313,122 +313,9 @@ _fts_ai/ad/au   -- Triggers to sync FTS5 with _source
 | `date` | `TEXT` | Auto-detected from RFC3339/ISO8601 |
 | `object` | `TEXT` | Stored as nested JSON |
 
-## Test Results
+## Performance Benchmark
 
-### OpenSearch Client Compatibility Tests
-
-Tests using the official [`opensearch` Rust crate](https://crates.io/crates/opensearch) v2.3.0:
-
-| Test | Status |
-|---|---|
-| Create and delete index | Pass |
-| Document CRUD (index, get, update, delete) | Pass |
-| Partial update (field merge) | Pass |
-| Search - match query | Pass |
-| Search - match_all query | Pass |
-| Search - bool query with range filter | Pass |
-| Search pagination (from/size) | Pass |
-| Count (all + filtered) | Pass |
-| Bulk operations | Pass |
-| Multi-get (index-scoped + global) | Pass |
-| Cluster health | Pass |
-| Dynamic mapping (no schema) | Pass |
-| Auto-generated document IDs | Pass |
-
-**Result: 11/11 (100%)**
-
-### Additional Integration Tests
-
-Tests for aggregation, alias, sort, multi-index, and search improvements (included in `cargo test --test opensearch_client`):
-
-| Test | Status |
-|---|---|
-| Terms aggregation (basic) | Pass |
-| Terms aggregation (multiple aggs in one request) | Pass |
-| Terms aggregation (with query filter) | Pass |
-| Terms aggregation (JSON array fields) | Pass |
-| Terms aggregation (`aggregations` alias for `aggs`) | Pass |
-| Empty aggregations (non-existent index returns empty buckets) | Pass |
-| `typed_keys=true` (sterms# prefix) | Pass |
-| Index aliases (create, search via alias, remove) | Pass |
-| Multi-index aliases (alias pointing to multiple indices) | Pass |
-| Sort by field (ascending and descending) | Pass |
-| Multi-index search (comma-separated) | Pass |
-| Wildcard index pattern search | Pass |
-| Delete by query | Pass |
-| FTS underscore/hyphen search (partial prefix matching) | Pass |
-| Keyword sub-field stripping (`.keyword` suffix) | Pass |
-| Bool should with mixed FTS and term queries | Pass |
-| Count with query filter | Pass |
-
-**Result: 17/17 (100%)**
-
-### Comparison Tests vs Real OpenSearch
-
-Automated tests that start a real OpenSearch 2.17.1 Docker container and compare responses side-by-side (`cargo test --test comparison -- --test-threads=1`). Requires Docker.
-
-#### Response Structure Comparison
-
-Verifies that es-sqlite returns the same JSON structure (keys, value types, nesting) as real OpenSearch:
-
-| Test | Status |
-|---|---|
-| `match_all` response shape (hits, _shards, took, timed_out) | Pass |
-| Search hits structure (_id, _score, _source, _index) | Pass |
-| Aggregation response shape (buckets, doc_count_error_upper_bound) | Pass |
-| `typed_keys=true` key format (sterms#name) | Pass |
-| `_count` endpoint response shape | Pass |
-
-**Result: 5/5 (100%)**
-
-#### Ranking Order Comparison
-
-Compares document ranking (by `_id` order in `hits.hits[]`) between es-sqlite and OpenSearch for the same queries:
-
-| Test | Status | Notes |
-|---|---|---|
-| Single-term `match` query | Pass | Exact ID order match |
-| `multi_match` across fields | Pass | Exact ID order match |
-| `bool` must + filter | Pass | Exact ID order match |
-
-**Result: 3/3 (100%)**
-
-#### Aggregation Value Comparison
-
-Compares aggregation bucket keys and `doc_count` values exactly:
-
-| Test | Status |
-|---|---|
-| `terms` aggregation (bucket keys + counts) | Pass |
-| `terms` aggregation with query filter | Pass |
-
-**Result: 2/2 (100%)**
-
-#### Sort Order Comparison
-
-Verifies identical document ordering when explicit sort is used:
-
-| Test | Status |
-|---|---|
-| Single-field sort (year ascending) | Pass |
-| Multi-field sort (category asc, year desc) | Pass |
-
-**Result: 2/2 (100%)**
-
-#### Real Corpus Tests
-
-15 Wikipedia-style articles (programming languages, databases, operating systems) indexed into both engines:
-
-| Test | Status | Notes |
-|---|---|---|
-| FTS ranking comparison ("database management") | Pass | Top-5 overlap ≥80% |
-| Sort + pagination (by year, page 2) | Pass | Exact document order match |
-
-**Result: 2/2 (100%)**
-
-#### Performance Benchmark
-
-Performance benchmarks are run separately via `cargo bench` using real Project Gutenberg books (511 documents). The benchmark tests at increasing document body sizes (1K, 5K, 10K, 50K, 100K chars) to show how performance scales.
+Performance benchmarks are run separately via `cargo bench` using real Project Gutenberg books (1600 documents). The benchmark tests at increasing document body sizes (1K, 5K, 10K, 50K, 100K chars) to show how performance scales. Results below are from [CI (GitHub Actions, Ubuntu 24.04)](https://github.com/luqmansen/es-sqlite/actions/runs/22474762499/job/65099316921), not a tuned local machine.
 
 ```bash
 # Run benchmarks (requires Docker for OpenSearch comparison)
@@ -437,121 +324,76 @@ cargo bench --bench gutenberg_bench
 
 The corpus is automatically downloaded from the [Gutendex API](https://gutendex.com/) on first run and cached locally (5 concurrent workers, per-file caching to disk). Benchmarks cover: `match_all`, `match`, `multi_match`, `bool` must+filter, `terms` aggregation, `sort`, `query_string`, and `filtered_agg` queries.
 
-**Results** (511 Gutenberg books, es-sqlite vs OpenSearch 2.17.1, 10 iterations per query, averaged):
+**Results** (1600 Gutenberg books, es-sqlite vs OpenSearch 2.17.1, GitHub Actions runner):
 
-| Query | 1K (avg 1.0KB) | 5K (avg 5.0KB) | 10K (avg 10.0KB) | 50K (avg 48.9KB) | 100K (avg 95.9KB) |
+| Query | 1K (avg 999B) | 5K (avg 5.0KB) | 10K (avg 9.9KB) | 50K (avg 48.9KB) | 100K (avg 96.3KB) |
 |---|---|---|---|---|---|
-| match_all | **0.8ms** vs 19ms (24x) | **1.7ms** vs 28ms (17x) | **2.0ms** vs 28ms (14x) | **6.5ms** vs 81ms (13x) | **10.1ms** vs 119ms (12x) |
-| match_single | **1.1ms** vs 16ms (14x) | **1.6ms** vs 22ms (13x) | **1.5ms** vs 15ms (10x) | **4.1ms** vs 26ms (6x) | **7.1ms** vs 29ms (4x) |
-| match_body | **2.3ms** vs 53ms (23x) | **4.0ms** vs 62ms (16x) | **5.8ms** vs 47ms (8x) | **15.9ms** vs 60ms (4x) | **30.3ms** vs 124ms (4x) |
-| multi_match | **1.9ms** vs 50ms (26x) | **3.4ms** vs 49ms (15x) | **3.3ms** vs 52ms (16x) | **12.0ms** vs 72ms (6x) | **22.1ms** vs 116ms (5x) |
-| bool_must_filter | **1.1ms** vs 25ms (23x) | **1.7ms** vs 24ms (14x) | **2.6ms** vs 48ms (18x) | **13.3ms** vs 141ms (11x) | **37.5ms** vs 114ms (3x) |
-| terms_agg | **2.4ms** vs 17ms (7x) | **11.9ms** vs 34ms (3x) | 26.5ms vs **30ms** (1x) | 71.5ms vs **27ms** (2.6x) | 194ms vs **22ms** (9x) |
-| sort_popularity | **1.3ms** vs 26ms (20x) | **2.9ms** vs 30ms (10x) | **5.4ms** vs 29ms (5x) | **15.3ms** vs 106ms (7x) | **47.0ms** vs 152ms (3x) |
-| sort_multi | **1.3ms** vs 42ms (32x) | **2.9ms** vs 27ms (9x) | **7.1ms** vs 39ms (5x) | **19.3ms** vs 128ms (7x) | **43.8ms** vs 139ms (3x) |
-| query_string | **1.4ms** vs 16ms (12x) | **1.9ms** vs 28ms (15x) | **3.3ms** vs 33ms (10x) | **10.7ms** vs 189ms (18x) | **20.1ms** vs 137ms (7x) |
-| filtered_agg | **1.2ms** vs 13ms (11x) | **2.1ms** vs 25ms (12x) | **9.0ms** vs 18ms (2x) | 59ms vs **46ms** (1.3x) | 171ms vs **19ms** (9x) |
-| **Bulk index** | **149ms** vs 7.3s (49x) | **317ms** vs 5.5s (17x) | **463ms** vs 6.3s (14x) | **1.8s** vs 17.2s (10x) | **2.7s** vs 16.0s (6x) |
+| match_all | **44ms** vs 51ms (1.2x) | **44ms** vs 54ms (1.2x) | **45ms** vs 57ms (1.3x) | **48ms** vs 80ms (1.7x) | **53ms** vs 110ms (2.1x) |
+| match_single | **45ms** vs 51ms (1.1x) | **45ms** vs 52ms (1.2x) | **45ms** vs 54ms (1.2x) | **49ms** vs 62ms (1.3x) | **54ms** vs 77ms (1.4x) |
+| match_body | **49ms** vs 53ms (1.1x) | **51ms** vs 55ms (1.1x) | **57ms** vs 59ms (1.0x) | **72ms** vs 86ms (1.2x) | **102ms** vs 119ms (1.2x) |
+| multi_match | **45ms** vs 55ms (1.2x) | **48ms** vs 55ms (1.1x) | **51ms** vs 59ms (1.1x) | **63ms** vs 87ms (1.4x) | **80ms** vs 116ms (1.4x) |
+| bool_must_filter | **45ms** vs 50ms (1.1x) | **47ms** vs 53ms (1.1x) | **50ms** vs 57ms (1.1x) | **75ms** vs 84ms (1.1x) | 123ms vs 122ms (~1x) |
+| terms_agg | 52ms vs **50ms** (~1x) | 69ms vs **49ms** (1.4x OS) | 91ms vs **50ms** (1.8x OS) | 300ms vs **49ms** (6.1x OS) | 540ms vs **50ms** (10.9x OS) |
+| sort_popularity | **46ms** vs 52ms (1.1x) | **49ms** vs 53ms (1.1x) | **54ms** vs 58ms (1.1x) | **82ms** vs 85ms (1.0x) | 123ms vs 120ms (~1x) |
+| sort_multi | **46ms** vs 56ms (1.2x) | **49ms** vs 55ms (1.1x) | **55ms** vs 59ms (1.1x) | **82ms** vs 83ms (1.0x) | 126ms vs 114ms (1.1x OS) |
+| query_string | **44ms** vs 51ms (1.2x) | **46ms** vs 54ms (1.2x) | **47ms** vs 56ms (1.2x) | **56ms** vs 86ms (1.5x) | **71ms** vs 112ms (1.6x) |
+| filtered_agg | **45ms** vs 50ms (1.1x) | 53ms vs **49ms** (1.1x OS) | 69ms vs **52ms** (1.3x OS) | 228ms vs **49ms** (4.6x OS) | 444ms vs **49ms** (9.1x OS) |
+| **Bulk index** | **623ms** vs 1240ms (2.0x) | **1.1s** vs 2.5s (2.2x) | **1.6s** vs 2.5s (1.5x) | **4.8s** vs 6.2s (1.3x) | **8.9s** vs 10.8s (1.2x) |
 
 **Key takeaways:**
-- es-sqlite is **7-49x faster** at small body sizes (1K-5K) across all query types and bulk indexing
-- Search/match/sort queries remain **3-18x faster** even at 100K body sizes
-- Bulk indexing is consistently **6-49x faster** at all sizes
-- `query_string` now uses FTS5 (previously fell back to LIKE), making it **7-18x faster** than OpenSearch across all sizes
-- OpenSearch catches up on `terms_agg` and `filtered_agg` at larger body sizes (50K+), where its columnar aggregation engine scales better than SQLite's `GROUP BY` on JSON-extracted fields
+- es-sqlite is **1.1-2.1x faster** for search/match/sort queries across all body sizes, with the advantage growing at larger document sizes for `match_all`, `multi_match`, and `query_string`
+- Bulk indexing is consistently **1.2-2.2x faster** at all sizes
+- `query_string` uses FTS5 (not LIKE fallback), keeping it **1.2-1.6x faster** than OpenSearch at all sizes
+- OpenSearch dominates on `terms_agg` and `filtered_agg` at larger body sizes (10K+), where its columnar aggregation engine scales better than SQLite's `GROUP BY` on JSON-extracted fields -- up to **10.9x faster** at 100K
+- At 100K body sizes, `bool_must_filter`, `sort_popularity`, and `sort_multi` converge to roughly equal performance between both engines
+- These are CI numbers (shared GitHub Actions runner); local results may differ due to CPU, disk, and JVM warm-up variance
 
-**Comparison tests total: 14/14 structure/ranking/agg/sort + 5 corpus tests (ranking, agg, sort/pagination) = 19/19 (100%)**
+#### Resource Benchmark (Memory & Disk)
 
-### OpenSearch YAML REST API Spec Tests
+The same benchmark also measures memory (RSS) and disk usage for both engines. es-sqlite runs as a single lightweight process with SQLite storage, while OpenSearch runs a full JVM-based server. Memory is measured via continuous sampling (every 500ms) using `ps -o rss=` for es-sqlite and `/proc/1/status` VmRSS inside the container for OpenSearch. Note: the environments differ (native macOS vs Linux container under Docker Desktop), so these numbers are indicative rather than a precise comparison.
 
-Vendored from the [OpenSearch repository](https://github.com/opensearch-project/OpenSearch) REST API test suite. All 122 spec files (440 test cases) are run with explicit pass/skip classification:
+**Memory (RSS)** (1593 Gutenberg books, local macOS, OpenSearch JVM heap `-Xms512m -Xmx512m`):
 
-- **Expected to pass (15)**: Enumerated in `EXPECTED_PASS` -- any regression fails the build
-- **Explicitly skipped (97 files)**: Enumerated in `SKIP_FILES` with documented reasons
-- **Remaining**: Run but failures don't break the build -- tracked for future work
+| Body Size | es-sqlite (avg) | es-sqlite (peak) | OpenSearch (avg) | OpenSearch (peak) | Ratio (avg) |
+|---|---|---|---|---|---|
+| idle | **5.5 MB** | 6.5 MB | 1.0 GB | 1.1 GB | **195x less** |
+| 1K | **8.1 MB** | 11.3 MB | 1.1 GB | 1.1 GB | **138x less** |
+| 5K | **27.7 MB** | 32.2 MB | 1.1 GB | 1.1 GB | **41x less** |
+| 10K | **35.4 MB** | 40.9 MB | 1.1 GB | 1.1 GB | **32x less** |
+| 50K | **40.3 MB** | 48.1 MB | 1.1 GB | 1.1 GB | **27x less** |
+| 100K | **54.0 MB** | 79.4 MB | 1.1 GB | 1.3 GB | **22x less** |
 
-| Category | Count |
+**Key takeaways:**
+- es-sqlite uses **22-195x less memory** than OpenSearch across all document sizes
+- Idle: **5.5 MB** vs **1.0 GB** — the JVM heap (512 MB) plus off-heap memory (Lucene segments, direct buffers, thread stacks) dominates OpenSearch's footprint
+- At 100K body size with 1593 documents, es-sqlite peaks at **79 MB** vs OpenSearch's **1.3 GB**
+- es-sqlite memory grows sub-linearly with data size (SQLite's page cache is bounded); OpenSearch stays relatively flat due to its pre-allocated JVM heap
+
+## OpenSearch API Compatibility
+
+Tested with the official [`opensearch` Rust crate](https://crates.io/crates/opensearch) v2.3.0 and validated against a real OpenSearch 2.17.1 instance.
+
+| Category | Compatible |
 |---|---|
-| Passed (expected) | 15 |
-| Skipped (files + yaml directives) | 122 |
-| Known failures | 17 |
-
-**Passing tests:**
-
-| File | Test |
-|---|---|
-| cluster.health/10_basic.yml | cluster health basic test |
-| cluster.health/10_basic.yml | one index |
-| cluster.health/10_basic.yml | wait for active shards |
-| cluster.health/10_basic.yml | wait for all active shards |
-| cluster.health/10_basic.yml | wait for no initializing |
-| delete/60_missing.yml | Missing document with catch |
-| get/60_realtime_refresh.yml | Realtime Refresh |
-| get/80_missing.yml | Missing document with catch |
-| index/100_partial_flat_object.yml | teardown |
-| search/110_field_collapsing.yml | field collapsing and scroll |
-| search/110_field_collapsing.yml | field collapsing and rescore |
-| search/110_field_collapsing.yml | no hits and inner_hits max_score null |
-| search/120_batch_reduce_size.yml | batched_reduce_size lower limit |
-| search/140_pre_filter_search_shards.yml | pre_filter_shard_size with invalid parameter |
-| search/80_indices_options.yml | Missing index date math with catch |
-
-**Skip reasons breakdown:**
-
-| Reason | Files |
-|---|---|
-| Auto-create index not supported | 16 |
-| Unsupported field types (flat_object, geo_point, etc.) | 8 |
-| Sort mode (min/max/avg on arrays) not supported | 5 |
-| _source filtering not supported | 4 |
-| External versioning not supported | 4 |
-| query_string via URL `q=` param not supported | 4 |
-| Compare-and-swap (if_seq_no) not supported | 3 |
-| Stored fields not supported | 3 |
-| Routing not supported | 3 |
-| match_only_text not supported | 3 |
-| Other unsupported features | 44 |
-
-### Programmatic YAML-style Test
-
-| Test | Status |
-|---|---|
-| Basic CRUD (create index, index doc, get, refresh, search, count, bulk, mget, delete) | Pass |
-
-**Result: 1/1 (100%)**
-
-### Combined Summary
-
-```
-OpenSearch client tests:    11/11  passed
-New feature tests:          17/17  passed
-Comparison vs OpenSearch:   19/19  passed (structure, ranking, aggs, sort, Gutenberg corpus)
-YAML spec expected pass:    15/15  passed (0 regressions)
-YAML spec skipped:          122    (documented reasons in SKIP_FILES)
-YAML spec known failures:   17     (tracked for future work)
-Programmatic CRUD test:     1/1    passed
-```
-
-## Compatibility Notes
-
-### What works with OpenSearch clients
-
-- Standard CRUD operations via official client libraries
-- Query DSL for common query types (match, term, bool, range, multi_match, query_string)
-- Terms aggregations with `typed_keys` support
-- Index aliases (single and multi-index, persisted to disk)
-- Sort by keyword, numeric, and date fields
-- Multi-index search (comma-separated and wildcard patterns)
-- Delete by query
-- Bulk indexing and multi-get
-- Pagination with `from`/`size` (query params and body)
-- Dynamic mapping (index documents without pre-defining schema)
-- Index management (create, delete, exists, mappings)
+| Index CRUD (create, delete, exists, mappings) | Yes |
+| Document CRUD (index, get, update, delete) | Yes |
+| Dynamic mapping (no pre-defined schema) | Yes |
+| `match`, `match_all`, `term`, `terms`, `range` queries | Yes |
+| `bool` (must/should/must_not/filter) | Yes |
+| `multi_match`, `query_string`, `exists` | Yes |
+| `function_score`, `wrapper` | Yes |
+| `terms` aggregation (`typed_keys`, `.keyword`, JSON arrays) | Yes |
+| Index aliases (single + multi-index, persisted) | Yes |
+| Sort by keyword, numeric, and date fields | Yes |
+| Multi-index search (comma-separated + wildcard) | Yes |
+| Delete by query | Yes |
+| Bulk indexing and multi-get | Yes |
+| Pagination (`from`/`size` via query params and body) | Yes |
+| Cluster health, `_cat/indices` | Yes (stubbed) |
 
 ### Known limitations
 
-- **Single node only** -- 1 shard, 0 replicas, always reports `green` health
-- **No auto-index creation** -- Indices must be created explicitly before indexing documents
+- **Single node only** -- Obviously
 - **Only terms aggregations** -- Metric aggregations (avg, sum, cardinality) and nested/pipeline aggregations are not supported
 - **No scroll/search_after** -- Only basic `from`/`size` pagination
 - **No _source filtering** -- Always returns full `_source`
@@ -561,15 +403,58 @@ Programmatic CRUD test:     1/1    passed
 - **BM25 scores differ** -- Same parameters as OpenSearch (k1=1.2, b=0.75) but IDF scope is per-index (inherent to SQLite FTS5)
 - **FTS5 text columns are fixed at creation** -- New text fields added via dynamic mapping won't be full-text searchable; queries automatically fall back to `LIKE`-based matching when FTS columns are missing
 
-## Tech Stack
+## OpenSearch YAML REST API Spec Tests
 
-| Component | Choice | Reason |
+All 408 YAML spec files (from 114 categories) are vendored from the [OpenSearch repository](https://github.com/opensearch-project/OpenSearch/tree/main/rest-api-spec/src/main/resources/rest-api-spec/test) and run against es-sqlite with explicit pass/skip classification.
+
+```
+Expected to pass:  114 tests   (regression = hard failure)
+Skipped:           326 tests   (documented reasons)
+Known failures:    398 tests   (tracked for future work)
+Regressions:       0
+```
+
+### Passing spec categories
+
+| Category | Tests | What's covered |
 |---|---|---|
-| HTTP framework | [axum](https://github.com/tokio-rs/axum) 0.8 | Clean routing for `/{index}/_search` style paths |
-| SQLite | [rusqlite](https://github.com/rusqlite/rusqlite) 0.32 (bundled) | Direct FTS5 control, dynamic SQL, zero external deps |
-| Async SQLite | [tokio-rusqlite](https://github.com/programatik29/tokio-rusqlite) 0.6 | Async bridge for rusqlite |
-| Serialization | [serde](https://serde.rs/) + serde_json | OpenSearch JSON request/response format |
-| Concurrency | [parking_lot](https://github.com/Amanieu/parking_lot) | Fast RwLock for index registry and mappings |
+| `bulk` | 1 | Array of objects (auto-create index) |
+| `cluster.health` | 5 | Basic health, wait_for_active_shards |
+| `cluster.*` (allocation_explain, reroute, remote_info, voting_config) | 7 | Error handling, empty state |
+| `create` | 3 | Create with/without ID, nested limit |
+| `delete` | 2 | Basic delete, missing document handling |
+| `exists` | 1 | Document exists check |
+| `get` / `get_source` | 8 | Basic CRUD, default values, realtime refresh, missing documents |
+| `index` | 3 | Index with ID, result field, flat object teardown |
+| `indices.create` | 3 | Create with/without mappings, invalid mappings |
+| `indices.delete` | 4 | Delete against aliases, wildcards |
+| `indices.get` | 7 | Index info, wildcards, missing index errors |
+| `indices.get_mapping` | 6 | Empty/populated mappings, missing index, wildcards |
+| `indices.put_mapping` | 1 | Invalid mappings |
+| `indices.get_alias` / `put_alias` / `delete_alias` | 10 | CRUD, wildcards, error handling |
+| `indices.*` (open, blocks, clear_cache, forcemerge, analyze, exists, recovery, rollover, stats, upgrade, settings, templates) | 22 | Various index management operations |
+| `info` / `ping` | 3 | Server info, ping |
+| `search` | 6 | Field collapsing, batch reduce, pre-filter, indices options |
+| `search.aggregation` | 5 | Terms (error cases), sig_terms, moving_fn, median_absolute_deviation |
+| `scroll` | 3 | Error cases, teardown |
+| `snapshot.*` | 4 | Error handling for missing snapshots/repos |
+| `update` | 4 | Upsert, doc_as_upsert, error messages, require_alias |
+| `ingest` / `mtermvectors` | 2 | Error handling |
+
+### Skipped spec categories (not supported)
+
+| Reason | Count | Examples |
+|---|---|---|
+| Unsupported field types | 14 files | geo_point, flat_object, unsigned_long, date_nanos, wildcard, match_only_text |
+| Routing | 9 files | Document/alias routing not supported |
+| Versioning / compare-and-swap | 10 files | External versioning, if_seq_no |
+| _source filtering | 7 files | Always returns full _source |
+| Unsupported query types | 15 files | intervals, match_bool_prefix, combined_fields, distance_feature |
+| Unsupported search features | 16 files | search_after, fetch_fields, doc_values, matched_queries, bitmap filtering |
+| Unsupported aggregation types | 42 files | histogram, range, filter, avg, max, min, sum, cardinality, percentiles, composite, etc. |
+| Cat APIs (text format) | 20 files | Cat APIs return text format not supported |
+| Cluster/node management | varies | snapshot, suggest, explain, field_caps, scripts, PIT, etc. |
+| Other | varies | refresh param, stored fields, error_trace, shard headers |
 
 ## Project Structure
 
@@ -606,7 +491,7 @@ tests/
   opensearch_client.rs  -- Integration tests (opensearch crate + raw HTTP)
   comparison.rs         -- Side-by-side comparison tests vs real OpenSearch (Docker)
   yaml_runner.rs        -- OpenSearch YAML REST API spec runner
-test-specs/             -- Vendored OpenSearch YAML test files (122 specs)
+test-specs/             -- Vendored OpenSearch YAML test files (408 specs, 114 categories)
 ```
 
 ## License

@@ -262,101 +262,133 @@ async fn load_or_download_corpus() -> Vec<Value> {
     download_gutenberg_corpus().await
 }
 
+async fn fetch_metadata_page(client: &Client, page: i32) -> Vec<Value> {
+    let url =
+        format!("https://gutendex.com/books/?page={page}&languages=en&mime_type=text%2Fplain");
+
+    let max_retries = 3;
+    let mut last_err = String::new();
+
+    for attempt in 1..=max_retries {
+        let resp = match client.get(&url).send().await {
+            Ok(r) => {
+                if !r.status().is_success() {
+                    last_err = format!("HTTP {}", r.status());
+                    eprintln!(
+                        "  Page {page} attempt {attempt}/{max_retries}: HTTP {}",
+                        r.status()
+                    );
+                    tokio::time::sleep(Duration::from_secs(2u64.pow(attempt as u32))).await;
+                    continue;
+                }
+                r
+            }
+            Err(e) => {
+                last_err = format!("{e:#}");
+                eprintln!("  Page {page} attempt {attempt}/{max_retries}: {e:#}");
+                tokio::time::sleep(Duration::from_secs(2u64.pow(attempt as u32))).await;
+                continue;
+            }
+        };
+
+        let body: Value = match resp.json().await {
+            Ok(v) => v,
+            Err(e) => {
+                last_err = format!("JSON parse: {e:#}");
+                eprintln!("  Page {page} attempt {attempt}/{max_retries}: JSON parse error: {e:#}");
+                tokio::time::sleep(Duration::from_secs(2u64.pow(attempt as u32))).await;
+                continue;
+            }
+        };
+
+        let results = match body["results"].as_array() {
+            Some(r) => r,
+            None => {
+                eprintln!("  Page {page}: no 'results' array in response");
+                return Vec::new();
+            }
+        };
+
+        let mut books = Vec::new();
+        for book in results {
+            let title = book["title"].as_str().unwrap_or("").to_string();
+            if title.is_empty() {
+                continue;
+            }
+            let author = book["authors"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|a| a["name"].as_str())
+                .unwrap_or("Unknown")
+                .to_string();
+            let birth_year = book["authors"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|a| a["birth_year"].as_i64())
+                .unwrap_or(0);
+            let death_year = book["authors"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|a| a["death_year"].as_i64())
+                .unwrap_or(0);
+            let subject = book["subjects"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let bookshelf = book["bookshelves"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            let download_count = book["download_count"].as_i64().unwrap_or(0);
+
+            let text_url = book["formats"]
+                .as_object()
+                .and_then(|f| {
+                    f.get("text/plain; charset=utf-8")
+                        .or_else(|| f.get("text/plain; charset=us-ascii"))
+                        .or_else(|| f.get("text/plain"))
+                })
+                .and_then(|v| v.as_str())
+                .map(String::from);
+
+            books.push(json!({
+                "title": title,
+                "author": author,
+                "birth_year": birth_year,
+                "death_year": death_year,
+                "subject": subject,
+                "bookshelf": bookshelf,
+                "download_count": download_count,
+                "text_url": text_url,
+            }));
+        }
+        return books;
+    }
+
+    eprintln!("  Page {page} FAILED after {max_retries} retries: {last_err}");
+    Vec::new()
+}
+
 async fn download_gutenberg_corpus() -> Vec<Value> {
     let client = Client::builder()
-        .timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(60))
         .build()
         .unwrap();
 
     // Phase 1: Fetch metadata (parallel — each page is independent)
     let pages = 50;
-    eprintln!("  Fetching {pages} pages of metadata (10 concurrent)...");
+    eprintln!("  Fetching {pages} pages of metadata (3 concurrent)...");
 
     let all_books: Vec<Value> = stream::iter(1..=pages)
         .map(|page| {
             let client = &client;
-            async move {
-                let url = format!(
-                    "https://gutendex.com/books/?page={page}&languages=en&mime_type=text%2Fplain"
-                );
-
-                let resp = match client.get(&url).send().await {
-                    Ok(r) => r,
-                    Err(e) => {
-                        eprintln!("  Failed page {page}: {e}");
-                        return Vec::new();
-                    }
-                };
-                let body: Value = match resp.json().await {
-                    Ok(v) => v,
-                    Err(_) => return Vec::new(),
-                };
-                let results = match body["results"].as_array() {
-                    Some(r) => r,
-                    None => return Vec::new(),
-                };
-
-                let mut books = Vec::new();
-                for book in results {
-                    let title = book["title"].as_str().unwrap_or("").to_string();
-                    if title.is_empty() {
-                        continue;
-                    }
-                    let author = book["authors"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|a| a["name"].as_str())
-                        .unwrap_or("Unknown")
-                        .to_string();
-                    let birth_year = book["authors"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|a| a["birth_year"].as_i64())
-                        .unwrap_or(0);
-                    let death_year = book["authors"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|a| a["death_year"].as_i64())
-                        .unwrap_or(0);
-                    let subject = book["subjects"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let bookshelf = book["bookshelves"]
-                        .as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|s| s.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let download_count = book["download_count"].as_i64().unwrap_or(0);
-
-                    let text_url = book["formats"]
-                        .as_object()
-                        .and_then(|f| {
-                            f.get("text/plain; charset=utf-8")
-                                .or_else(|| f.get("text/plain; charset=us-ascii"))
-                                .or_else(|| f.get("text/plain"))
-                        })
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-
-                    books.push(json!({
-                        "title": title,
-                        "author": author,
-                        "birth_year": birth_year,
-                        "death_year": death_year,
-                        "subject": subject,
-                        "bookshelf": bookshelf,
-                        "download_count": download_count,
-                        "text_url": text_url,
-                    }));
-                }
-                books
-            }
+            async move { fetch_metadata_page(client, page).await }
         })
-        .buffer_unordered(10)
+        .buffer_unordered(3)
         .collect::<Vec<Vec<Value>>>()
         .await
         .into_iter()
@@ -368,8 +400,13 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
         all_books.len()
     );
 
+    if all_books.is_empty() {
+        eprintln!("  ERROR: No metadata fetched from Gutendex API");
+        return Vec::new();
+    }
+
     let total = all_books.len();
-    eprintln!("  Downloading texts (10 workers)...");
+    eprintln!("  Downloading texts (5 workers)...");
 
     // Phase 2: Download texts with 10 concurrent workers, writing each to disk immediately
     std::fs::create_dir_all(CACHE_DIR).expect("create cache dir");
@@ -387,17 +424,29 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
                 };
 
                 let body_text = match client.get(text_url).send().await {
-                    Ok(resp) => match resp.text().await {
-                        Ok(text) => {
-                            let cleaned = strip_gutenberg_boilerplate(&text);
-                            if cleaned.len() < 500 {
+                    Ok(resp) => {
+                        if !resp.status().is_success() {
+                            eprintln!("  Book {i}: HTTP {} from {text_url}", resp.status());
+                            return None;
+                        }
+                        match resp.text().await {
+                            Ok(text) => {
+                                let cleaned = strip_gutenberg_boilerplate(&text);
+                                if cleaned.len() < 500 {
+                                    return None;
+                                }
+                                truncate_to_char_boundary(&cleaned, 100_000).to_string()
+                            }
+                            Err(e) => {
+                                eprintln!("  Book {i}: body read error: {e:#}");
                                 return None;
                             }
-                            truncate_to_char_boundary(&cleaned, 100_000).to_string()
                         }
-                        Err(_) => return None,
-                    },
-                    Err(_) => return None,
+                    }
+                    Err(e) => {
+                        eprintln!("  Book {i}: download failed: {e:#}");
+                        return None;
+                    }
                 };
 
                 let doc = json!({
@@ -425,7 +474,7 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
                 Some(doc)
             }
         })
-        .buffer_unordered(10)
+        .buffer_unordered(5)
         .filter_map(|x| async { x })
         .collect()
         .await;
@@ -633,8 +682,8 @@ fn main() {
         // Load corpus
         let corpus = load_or_download_corpus().await;
         if corpus.is_empty() {
-            eprintln!("No corpus available, cannot benchmark");
-            return;
+            eprintln!("ERROR: No corpus available, cannot benchmark");
+            std::process::exit(1);
         }
         eprintln!("Corpus: {} documents loaded", corpus.len());
 

@@ -11,8 +11,8 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  check:
-    name: Check & Lint
+  build:
+    name: Build & Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,13 +24,26 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Build
+      - name: Build release binary
         run: cargo build --release
+      - name: Build test binaries
+        run: cargo test --no-run --all-targets
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          retention-days: 1
+          path: |
+            target/release/es-sqlite
+            target/debug/deps/opensearch_client-*
+            target/debug/deps/yaml_runner-*
+            target/debug/deps/comparison-*
+            target/release/deps/gutenberg_bench-*
 
   test-unit:
     name: Unit & Integration Tests
     runs-on: ubuntu-latest
-    needs: check
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,7 +56,7 @@ jobs:
   test-comparison:
     name: Comparison Tests (vs OpenSearch)
     runs-on: ubuntu-latest
-    needs: check
+    needs: build
     services:
       opensearch:
         image: opensearchproject/opensearch:2.17.1
@@ -79,7 +92,7 @@ jobs:
   bench:
     name: Benchmark (Gutenberg)
     runs-on: ubuntu-latest
-    needs: check
+    needs: build
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

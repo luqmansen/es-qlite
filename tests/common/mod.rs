@@ -22,10 +22,13 @@ pub async fn ensure_server() -> &'static str {
         std::thread::spawn(move || {
             let rt = tokio::runtime::Runtime::new().expect("create test server runtime");
             rt.block_on(async move {
-                let registry = Arc::new(
-                    es_sqlite::storage::registry::IndexRegistry::new(data_dir_clone),
-                );
-                registry.load_existing().await.expect("load existing indices");
+                let registry = Arc::new(es_sqlite::storage::registry::IndexRegistry::new(
+                    data_dir_clone,
+                ));
+                registry
+                    .load_existing()
+                    .await
+                    .expect("load existing indices");
                 let app = es_sqlite::server::build_router(registry);
 
                 let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))

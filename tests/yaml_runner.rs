@@ -211,34 +211,31 @@ impl TestRunner {
     }
 
     fn assert_is_true(&self, path: &str) -> Result<(), String> {
-        let response = self
-            .last_response
-            .as_ref()
-            .ok_or("No response")?;
+        let response = self.last_response.as_ref().ok_or("No response")?;
         let actual = navigate_json(response, path);
-        if actual.is_null() || actual == Value::Bool(false) || actual == Value::String(String::new()) {
+        if actual.is_null()
+            || actual == Value::Bool(false)
+            || actual == Value::String(String::new())
+        {
             return Err(format!("is_true failed at '{path}': got {actual}"));
         }
         Ok(())
     }
 
     fn assert_is_false(&self, path: &str) -> Result<(), String> {
-        let response = self
-            .last_response
-            .as_ref()
-            .ok_or("No response")?;
+        let response = self.last_response.as_ref().ok_or("No response")?;
         let actual = navigate_json(response, path);
-        if !actual.is_null() && actual != Value::Bool(false) && actual != Value::String(String::new()) {
+        if !actual.is_null()
+            && actual != Value::Bool(false)
+            && actual != Value::String(String::new())
+        {
             return Err(format!("is_false failed at '{path}': got {actual}"));
         }
         Ok(())
     }
 
     fn assert_length(&self, path: &str, expected_len: u64) -> Result<(), String> {
-        let response = self
-            .last_response
-            .as_ref()
-            .ok_or("No response")?;
+        let response = self.last_response.as_ref().ok_or("No response")?;
         let actual = navigate_json(response, path);
         let len = match &actual {
             Value::Array(arr) => arr.len() as u64,
@@ -286,9 +283,7 @@ fn values_match(actual: &Value, expected: &Value) -> bool {
             // ES sometimes returns string numbers
             a == &n.to_string()
         }
-        (Value::Number(n), Value::String(b)) => {
-            n.to_string() == *b
-        }
+        (Value::Number(n), Value::String(b)) => n.to_string() == *b,
         (Value::Bool(a), Value::Bool(b)) => a == b,
         (Value::Null, Value::Null) => true,
         (Value::Array(a), Value::Array(b)) => {
@@ -296,9 +291,8 @@ fn values_match(actual: &Value, expected: &Value) -> bool {
         }
         (Value::Object(a), Value::Object(b)) => {
             // Expected should be a subset of actual
-            b.iter().all(|(k, v)| {
-                a.get(k).map_or(false, |av| values_match(av, v))
-            })
+            b.iter()
+                .all(|(k, v)| a.get(k).map_or(false, |av| values_match(av, v)))
         }
         _ => actual == expected,
     }
@@ -443,9 +437,7 @@ async fn execute_operation(runner: &mut TestRunner, op: &YamlValue) -> Result<()
         match key_str.as_str() {
             "do" => runner.execute_do(value).await?,
             "match" => {
-                let match_map = value
-                    .as_mapping()
-                    .ok_or("match value must be a mapping")?;
+                let match_map = value.as_mapping().ok_or("match value must be a mapping")?;
                 for (path, expected) in match_map {
                     let path_str = yaml_to_string(path);
                     runner.assert_match(&path_str, expected)?;
@@ -460,9 +452,7 @@ async fn execute_operation(runner: &mut TestRunner, op: &YamlValue) -> Result<()
                 runner.assert_is_false(&path)?;
             }
             "length" => {
-                let len_map = value
-                    .as_mapping()
-                    .ok_or("length value must be a mapping")?;
+                let len_map = value.as_mapping().ok_or("length value must be a mapping")?;
                 for (path, expected_len) in len_map {
                     let path_str = yaml_to_string(path);
                     let len = match expected_len {
@@ -508,18 +498,25 @@ async fn test_basic_crud_yaml_style() {
         .await
         .expect("Failed to create index");
 
-    runner.assert_match("acknowledged", &YamlValue::Bool(true)).unwrap();
+    runner
+        .assert_match("acknowledged", &YamlValue::Bool(true))
+        .unwrap();
 
     // Index a document
     runner
         .execute_api_call(
             "index",
-            &serde_yaml::from_str::<YamlValue>("index: yaml-test\nid: \"1\"\nbody:\n  title: hello world\n  count: 42").unwrap(),
+            &serde_yaml::from_str::<YamlValue>(
+                "index: yaml-test\nid: \"1\"\nbody:\n  title: hello world\n  count: 42",
+            )
+            .unwrap(),
         )
         .await
         .expect("Failed to index doc");
 
-    runner.assert_match("result", &YamlValue::String("created".into())).unwrap();
+    runner
+        .assert_match("result", &YamlValue::String("created".into()))
+        .unwrap();
 
     // Get the document
     runner
@@ -530,8 +527,12 @@ async fn test_basic_crud_yaml_style() {
         .await
         .expect("Failed to get doc");
 
-    runner.assert_match("found", &YamlValue::Bool(true)).unwrap();
-    runner.assert_match("_source.title", &YamlValue::String("hello world".into())).unwrap();
+    runner
+        .assert_match("found", &YamlValue::Bool(true))
+        .unwrap();
+    runner
+        .assert_match("_source.title", &YamlValue::String("hello world".into()))
+        .unwrap();
 
     // Refresh
     runner
@@ -546,24 +547,39 @@ async fn test_basic_crud_yaml_style() {
     runner
         .execute_api_call(
             "search",
-            &serde_yaml::from_str::<YamlValue>("index: yaml-test\nbody:\n  query:\n    match:\n      title: hello").unwrap(),
+            &serde_yaml::from_str::<YamlValue>(
+                "index: yaml-test\nbody:\n  query:\n    match:\n      title: hello",
+            )
+            .unwrap(),
         )
         .await
         .expect("Failed to search");
 
-    runner.assert_match("hits.total.value", &YamlValue::Number(1.into())).unwrap();
-    runner.assert_match("hits.hits.0._source.title", &YamlValue::String("hello world".into())).unwrap();
+    runner
+        .assert_match("hits.total.value", &YamlValue::Number(1.into()))
+        .unwrap();
+    runner
+        .assert_match(
+            "hits.hits.0._source.title",
+            &YamlValue::String("hello world".into()),
+        )
+        .unwrap();
 
     // Count
     runner
         .execute_api_call(
             "count",
-            &serde_yaml::from_str::<YamlValue>("index: yaml-test\nbody:\n  query:\n    match_all: {}").unwrap(),
+            &serde_yaml::from_str::<YamlValue>(
+                "index: yaml-test\nbody:\n  query:\n    match_all: {}",
+            )
+            .unwrap(),
         )
         .await
         .expect("Failed to count");
 
-    runner.assert_match("count", &YamlValue::Number(1.into())).unwrap();
+    runner
+        .assert_match("count", &YamlValue::Number(1.into()))
+        .unwrap();
 
     // Delete document
     runner
@@ -574,7 +590,9 @@ async fn test_basic_crud_yaml_style() {
         .await
         .expect("Failed to delete doc");
 
-    runner.assert_match("result", &YamlValue::String("deleted".into())).unwrap();
+    runner
+        .assert_match("result", &YamlValue::String("deleted".into()))
+        .unwrap();
 
     // Delete index
     runner
@@ -592,10 +610,22 @@ async fn test_basic_crud_yaml_style() {
 const EXPECTED_PASS: &[(&str, &str)] = &[
     // ─── cluster.health ─────────────────────────────────────────────────────
     ("cluster.health/10_basic.yml", "cluster health basic test"),
-    ("cluster.health/10_basic.yml", "cluster health basic test, one index"),
-    ("cluster.health/10_basic.yml", "cluster health basic test, one index with wait for active shards"),
-    ("cluster.health/10_basic.yml", "cluster health basic test, one index with wait for all active shards"),
-    ("cluster.health/10_basic.yml", "cluster health basic test, one index with wait for no initializing shards"),
+    (
+        "cluster.health/10_basic.yml",
+        "cluster health basic test, one index",
+    ),
+    (
+        "cluster.health/10_basic.yml",
+        "cluster health basic test, one index with wait for active shards",
+    ),
+    (
+        "cluster.health/10_basic.yml",
+        "cluster health basic test, one index with wait for all active shards",
+    ),
+    (
+        "cluster.health/10_basic.yml",
+        "cluster health basic test, one index with wait for no initializing shards",
+    ),
     // ─── delete ─────────────────────────────────────────────────────────────
     ("delete/60_missing.yml", "Missing document with catch"),
     // ─── get ────────────────────────────────────────────────────────────────
@@ -604,140 +634,375 @@ const EXPECTED_PASS: &[(&str, &str)] = &[
     // ─── index ──────────────────────────────────────────────────────────────
     ("index/100_partial_flat_object.yml", "teardown"),
     // ─── search ─────────────────────────────────────────────────────────────
-    ("search/110_field_collapsing.yml", "field collapsing and scroll"),
-    ("search/110_field_collapsing.yml", "field collapsing and rescore"),
-    ("search/110_field_collapsing.yml", "no hits and inner_hits max_score null"),
-    ("search/120_batch_reduce_size.yml", "batched_reduce_size lower limit"),
-    ("search/140_pre_filter_search_shards.yml", "pre_filter_shard_size with invalid parameter"),
-    ("search/80_indices_options.yml", "Missing index date math with catch"),
+    (
+        "search/110_field_collapsing.yml",
+        "field collapsing and scroll",
+    ),
+    (
+        "search/110_field_collapsing.yml",
+        "field collapsing and rescore",
+    ),
+    (
+        "search/110_field_collapsing.yml",
+        "no hits and inner_hits max_score null",
+    ),
+    (
+        "search/120_batch_reduce_size.yml",
+        "batched_reduce_size lower limit",
+    ),
+    (
+        "search/140_pre_filter_search_shards.yml",
+        "pre_filter_shard_size with invalid parameter",
+    ),
+    (
+        "search/80_indices_options.yml",
+        "Missing index date math with catch",
+    ),
 ];
 
 /// Files to skip entirely, with reasons.
 const SKIP_FILES: &[(&str, &str)] = &[
     // --- Unsupported field types / mappings ---
-    ("index/80_geo_point.yml", "geo_point field type not supported"),
-    ("index/90_flat_object.yml", "flat_object field type not supported"),
-    ("index/90_unsigned_long.yml", "unsigned_long field type not supported"),
-    ("index/91_flat_object_null_value.yml", "flat_object field type not supported"),
-    ("index/92_flat_object_support_doc_values.yml", "flat_object field type not supported"),
-    ("index/105_partial_flat_object_nested.yml", "flat_object nested not supported"),
-    ("index/115_constant_keyword.yml", "constant_keyword not supported"),
-    ("search/160_exists_query.yml", "requires version/features skip directive"),
-    ("search/160_exists_query_match_only_text.yml", "match_only_text not supported"),
-    ("search/180_locale_dependent_mapping.yml", "locale-dependent mappings not supported"),
-    ("search/200_ignore_malformed.yml", "ignore_malformed not supported"),
-    ("search/240_date_nanos.yml", "date_nanos field type not supported"),
-    ("search/250_distance_feature.yml", "distance_feature query not supported"),
-    ("search/270_wildcard_fieldtype_queries.yml", "wildcard field type not supported"),
-    ("search/390_search_as_you_type.yml", "search_as_you_type not supported"),
-
+    (
+        "index/80_geo_point.yml",
+        "geo_point field type not supported",
+    ),
+    (
+        "index/90_flat_object.yml",
+        "flat_object field type not supported",
+    ),
+    (
+        "index/90_unsigned_long.yml",
+        "unsigned_long field type not supported",
+    ),
+    (
+        "index/91_flat_object_null_value.yml",
+        "flat_object field type not supported",
+    ),
+    (
+        "index/92_flat_object_support_doc_values.yml",
+        "flat_object field type not supported",
+    ),
+    (
+        "index/105_partial_flat_object_nested.yml",
+        "flat_object nested not supported",
+    ),
+    (
+        "index/115_constant_keyword.yml",
+        "constant_keyword not supported",
+    ),
+    (
+        "search/160_exists_query.yml",
+        "requires version/features skip directive",
+    ),
+    (
+        "search/160_exists_query_match_only_text.yml",
+        "match_only_text not supported",
+    ),
+    (
+        "search/180_locale_dependent_mapping.yml",
+        "locale-dependent mappings not supported",
+    ),
+    (
+        "search/200_ignore_malformed.yml",
+        "ignore_malformed not supported",
+    ),
+    (
+        "search/240_date_nanos.yml",
+        "date_nanos field type not supported",
+    ),
+    (
+        "search/250_distance_feature.yml",
+        "distance_feature query not supported",
+    ),
+    (
+        "search/270_wildcard_fieldtype_queries.yml",
+        "wildcard field type not supported",
+    ),
+    (
+        "search/390_search_as_you_type.yml",
+        "search_as_you_type not supported",
+    ),
     // --- Unsupported APIs ---
-    ("cat.indices/10_basic.yml", "cat indices text format + query params not supported"),
+    (
+        "cat.indices/10_basic.yml",
+        "cat indices text format + query params not supported",
+    ),
     ("cat.indices/20_hidden.yml", "hidden indices not supported"),
-    ("cluster.health/30_indices_options.yml", "indices.close API not supported"),
-    ("mget/14_alias_to_multiple_indices.yml", "index aliases not supported"),
-
+    (
+        "cluster.health/30_indices_options.yml",
+        "indices.close API not supported",
+    ),
+    (
+        "mget/14_alias_to_multiple_indices.yml",
+        "index aliases not supported",
+    ),
     // --- Unsupported features ---
     ("bulk/40_source.yml", "_source filtering not supported"),
-    ("bulk/50_refresh.yml", "refresh query parameter not supported"),
-    ("bulk/80_cas.yml", "compare-and-swap (if_seq_no) not supported"),
+    (
+        "bulk/50_refresh.yml",
+        "refresh query parameter not supported",
+    ),
+    (
+        "bulk/80_cas.yml",
+        "compare-and-swap (if_seq_no) not supported",
+    ),
     ("bulk/90_pipeline.yml", "ingest pipelines not supported"),
     ("bulk/100_error_traces.yml", "error_trace not supported"),
-    ("bulk/110_bulk_adaptive_shard_select.yml", "adaptive shard selection not supported"),
+    (
+        "bulk/110_bulk_adaptive_shard_select.yml",
+        "adaptive shard selection not supported",
+    ),
     ("delete/11_shard_header.yml", "shard header not supported"),
-    ("delete/20_cas.yml", "compare-and-swap (if_seq_no) not supported"),
-    ("delete/25_external_version.yml", "external versioning not supported"),
-    ("delete/26_external_gte_version.yml", "external versioning not supported"),
+    (
+        "delete/20_cas.yml",
+        "compare-and-swap (if_seq_no) not supported",
+    ),
+    (
+        "delete/25_external_version.yml",
+        "external versioning not supported",
+    ),
+    (
+        "delete/26_external_gte_version.yml",
+        "external versioning not supported",
+    ),
     ("delete/30_routing.yml", "routing not supported"),
-    ("delete/50_refresh.yml", "refresh query parameter not supported"),
+    (
+        "delete/50_refresh.yml",
+        "refresh query parameter not supported",
+    ),
     ("get/20_stored_fields.yml", "stored fields not supported"),
     ("get/40_routing.yml", "routing not supported"),
     ("get/50_with_headers.yml", "custom headers not supported"),
-    ("get/70_source_filtering.yml", "_source filtering not supported"),
+    (
+        "get/70_source_filtering.yml",
+        "_source filtering not supported",
+    ),
     ("get/90_versions.yml", "external versioning not supported"),
     ("index/20_optype.yml", "op_type not supported"),
-    ("index/30_cas.yml", "compare-and-swap (if_seq_no) not supported"),
-    ("index/35_external_version.yml", "external versioning not supported"),
-    ("index/36_external_gte_version.yml", "external versioning not supported"),
+    (
+        "index/30_cas.yml",
+        "compare-and-swap (if_seq_no) not supported",
+    ),
+    (
+        "index/35_external_version.yml",
+        "external versioning not supported",
+    ),
+    (
+        "index/36_external_gte_version.yml",
+        "external versioning not supported",
+    ),
     ("index/40_routing.yml", "routing not supported"),
-    ("index/60_refresh.yml", "refresh query parameter not supported"),
+    (
+        "index/60_refresh.yml",
+        "refresh query parameter not supported",
+    ),
     ("index/70_require_alias.yml", "require_alias not supported"),
-    ("index/110_strict_allow_templates.yml", "dynamic templates not supported"),
-    ("index/111_false_allow_templates.yml", "dynamic templates not supported"),
-    ("index/120_field_name.yml", "field name validation not supported"),
+    (
+        "index/110_strict_allow_templates.yml",
+        "dynamic templates not supported",
+    ),
+    (
+        "index/111_false_allow_templates.yml",
+        "dynamic templates not supported",
+    ),
+    (
+        "index/120_field_name.yml",
+        "field name validation not supported",
+    ),
     ("mget/20_stored_fields.yml", "stored fields not supported"),
     ("mget/40_routing.yml", "routing not supported"),
-    ("mget/60_realtime_refresh.yml", "realtime refresh not supported"),
-    ("mget/70_source_filtering.yml", "_source filtering not supported"),
-    ("mget/80_deprecated.yml", "deprecated type parameter not supported"),
+    (
+        "mget/60_realtime_refresh.yml",
+        "realtime refresh not supported",
+    ),
+    (
+        "mget/70_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "mget/80_deprecated.yml",
+        "deprecated type parameter not supported",
+    ),
     ("mget/90_error_traces.yml", "error_trace not supported"),
-    ("search/10_source_filtering.yml", "_source filtering not supported"),
-    ("search/100_stored_fields.yml", "stored fields not supported"),
-    ("search/115_multiple_field_collapsing.yml", "multiple field collapsing not supported"),
-    ("search/150_rewrite_on_coordinator.yml", "rewrite on coordinator not supported"),
-    ("search/170_terms_query.yml", "terms query with index lookup not supported"),
-    ("search/171_terms_lookup_query.yml", "terms lookup not supported"),
-    ("search/190_index_prefix_search.yml", "index_prefixes not supported"),
-    ("search/200_index_phrase_search.yml", "index_phrases not supported"),
-    ("search/200_phrase_search_field_match_only_text.yml", "match_only_text not supported"),
-    ("search/210_rescore_explain.yml", "rescore explain not supported"),
-    ("search/230_interval_query.yml", "intervals query not supported"),
+    (
+        "search/10_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "search/100_stored_fields.yml",
+        "stored fields not supported",
+    ),
+    (
+        "search/115_multiple_field_collapsing.yml",
+        "multiple field collapsing not supported",
+    ),
+    (
+        "search/150_rewrite_on_coordinator.yml",
+        "rewrite on coordinator not supported",
+    ),
+    (
+        "search/170_terms_query.yml",
+        "terms query with index lookup not supported",
+    ),
+    (
+        "search/171_terms_lookup_query.yml",
+        "terms lookup not supported",
+    ),
+    (
+        "search/190_index_prefix_search.yml",
+        "index_prefixes not supported",
+    ),
+    (
+        "search/200_index_phrase_search.yml",
+        "index_phrases not supported",
+    ),
+    (
+        "search/200_phrase_search_field_match_only_text.yml",
+        "match_only_text not supported",
+    ),
+    (
+        "search/210_rescore_explain.yml",
+        "rescore explain not supported",
+    ),
+    (
+        "search/230_interval_query.yml",
+        "intervals query not supported",
+    ),
     ("search/260_sort_double.yml", "sort not supported"),
     ("search/260_sort_geopoint.yml", "sort not supported"),
     ("search/260_sort_long.yml", "sort not supported"),
     ("search/260_sort_mixed.yml", "sort not supported"),
     ("search/260_sort_unsigned_long.yml", "sort not supported"),
-    ("search/300_sequence_numbers.yml", "sequence number tracking not supported"),
-    ("search/310_match_bool_prefix.yml", "match_bool_prefix not supported"),
-    ("search/310_match_bool_prefix_field_match_only_text.yml", "match_only_text not supported"),
-    ("search/320_disallow_queries.yml", "query allow/disallow not supported"),
-    ("search/320_disallow_queries_field_match_only_text.yml", "match_only_text not supported"),
-    ("search/330_distributed_sort.yml", "distributed sort not supported"),
+    (
+        "search/300_sequence_numbers.yml",
+        "sequence number tracking not supported",
+    ),
+    (
+        "search/310_match_bool_prefix.yml",
+        "match_bool_prefix not supported",
+    ),
+    (
+        "search/310_match_bool_prefix_field_match_only_text.yml",
+        "match_only_text not supported",
+    ),
+    (
+        "search/320_disallow_queries.yml",
+        "query allow/disallow not supported",
+    ),
+    (
+        "search/320_disallow_queries_field_match_only_text.yml",
+        "match_only_text not supported",
+    ),
+    (
+        "search/330_distributed_sort.yml",
+        "distributed sort not supported",
+    ),
     ("search/330_fetch_fields.yml", "fetch fields not supported"),
-    ("search/340_doc_values_field.yml", "doc_values not supported"),
-    ("search/350_matched_queries.yml", "matched_queries not supported"),
-    ("search/370_approximate_range.yml", "approximate range not supported"),
-    ("search/380_bitmap_filtering.yml", "bitmap filtering not supported"),
-    ("search/381_bitmap_filtering_long.yml", "bitmap filtering not supported"),
-    ("search/400_combined_fields.yml", "combined_fields query not supported"),
+    (
+        "search/340_doc_values_field.yml",
+        "doc_values not supported",
+    ),
+    (
+        "search/350_matched_queries.yml",
+        "matched_queries not supported",
+    ),
+    (
+        "search/370_approximate_range.yml",
+        "approximate range not supported",
+    ),
+    (
+        "search/380_bitmap_filtering.yml",
+        "bitmap filtering not supported",
+    ),
+    (
+        "search/381_bitmap_filtering_long.yml",
+        "bitmap filtering not supported",
+    ),
+    (
+        "search/400_combined_fields.yml",
+        "combined_fields query not supported",
+    ),
     ("search/90_search_after.yml", "search_after not supported"),
-    ("search/95_search_after_shard_doc.yml", "search_after not supported"),
+    (
+        "search/95_search_after_shard_doc.yml",
+        "search_after not supported",
+    ),
     ("search/issue4895.yml", "query_string query not supported"),
     ("search/issue9606.yml", "query_string query not supported"),
-    ("cluster.health/20_request_timeout.yml", "timeout simulation not supported"),
-    ("count/20_query_string.yml", "query_string query not supported"),
-
+    (
+        "cluster.health/20_request_timeout.yml",
+        "timeout simulation not supported",
+    ),
+    (
+        "count/20_query_string.yml",
+        "query_string query not supported",
+    ),
     // --- Auto-create index (index must be created explicitly) ---
-    ("bulk/10_basic.yml", "auto-create index on bulk not supported"),
-    ("bulk/20_list_of_strings.yml", "auto-create index on bulk not supported"),
-    ("bulk/30_big_string.yml", "auto-create index on bulk not supported"),
+    (
+        "bulk/10_basic.yml",
+        "auto-create index on bulk not supported",
+    ),
+    (
+        "bulk/20_list_of_strings.yml",
+        "auto-create index on bulk not supported",
+    ),
+    (
+        "bulk/30_big_string.yml",
+        "auto-create index on bulk not supported",
+    ),
     ("count/10_basic.yml", "auto-create index not supported"),
     ("delete/10_basic.yml", "auto-create index not supported"),
     ("delete/12_result.yml", "auto-create index not supported"),
     ("get/10_basic.yml", "auto-create index not supported"),
-    ("get/15_default_values.yml", "auto-create index not supported"),
+    (
+        "get/15_default_values.yml",
+        "auto-create index not supported",
+    ),
     ("index/10_with_id.yml", "auto-create index not supported"),
     ("index/12_result.yml", "auto-create index not supported"),
     ("index/15_without_id.yml", "auto-create index not supported"),
     ("mget/10_basic.yml", "auto-create index not supported"),
-    ("mget/12_non_existent_index.yml", "auto-create index not supported"),
-    ("mget/13_missing_metadata.yml", "auto-create index not supported"),
+    (
+        "mget/12_non_existent_index.yml",
+        "auto-create index not supported",
+    ),
+    (
+        "mget/13_missing_metadata.yml",
+        "auto-create index not supported",
+    ),
     ("mget/15_ids.yml", "auto-create index not supported"),
-    ("mget/17_default_index.yml", "auto-create index not supported"),
-
+    (
+        "mget/17_default_index.yml",
+        "auto-create index not supported",
+    ),
     // --- Response format differences ---
-    ("search/220_total_hits_object.yml", "track_total_hits parameter not supported"),
+    (
+        "search/220_total_hits_object.yml",
+        "track_total_hits parameter not supported",
+    ),
     ("search/360_from_and_size.yml", "requires auto-create index"),
-    ("search/400_max_score.yml", "max_score tracking not supported"),
-
+    (
+        "search/400_max_score.yml",
+        "max_score tracking not supported",
+    ),
     // --- Stash variable / advanced runner features ---
     ("search/20_default_values.yml", "requires auto-create index"),
     ("search/30_limits.yml", "max result window not supported"),
     ("search/40_indices_boost.yml", "indices_boost not supported"),
     ("search/50_multi_match.yml", "requires auto-create index"),
-    ("search/60_query_string.yml", "query_string query not supported"),
-    ("search/61_query_string_field_alias.yml", "query_string + field alias not supported"),
-    ("search/70_response_filtering.yml", "response filtering not supported"),
+    (
+        "search/60_query_string.yml",
+        "query_string query not supported",
+    ),
+    (
+        "search/61_query_string_field_alias.yml",
+        "query_string + field alias not supported",
+    ),
+    (
+        "search/70_response_filtering.yml",
+        "response filtering not supported",
+    ),
 ];
 
 /// Run official YAML test spec files.
@@ -760,8 +1025,7 @@ async fn test_yaml_spec_files() {
 
     let expected_pass: std::collections::HashSet<(&str, &str)> =
         EXPECTED_PASS.iter().copied().collect();
-    let skip_files: HashMap<&str, &str> =
-        SKIP_FILES.iter().map(|&(f, r)| (f, r)).collect();
+    let skip_files: HashMap<&str, &str> = SKIP_FILES.iter().map(|&(f, r)| (f, r)).collect();
 
     let mut total = 0;
     let mut passed = 0;

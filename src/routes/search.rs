@@ -7,7 +7,9 @@ use std::time::Instant;
 
 use crate::error::EsError;
 use crate::model::document::ShardsInfo;
-use crate::model::search::{AggregationResult, CountResponse, Hit, HitsEnvelope, HitsTotal, SearchRequest, SearchResponse};
+use crate::model::search::{
+    AggregationResult, CountResponse, Hit, HitsEnvelope, HitsTotal, SearchRequest, SearchResponse,
+};
 use crate::query::{parser, translator};
 use crate::storage::{reader, registry::IndexRegistry, writer};
 use std::collections::HashMap;
@@ -56,7 +58,10 @@ async fn search_inner(
         // For exact names, return index_not_found
         if IndexRegistry::is_pattern(&index) || !registry.exists(&index) {
             let envelope = HitsEnvelope {
-                total: HitsTotal { value: 0, relation: "eq".to_string() },
+                total: HitsTotal {
+                    value: 0,
+                    relation: "eq".to_string(),
+                },
                 max_score: None,
                 hits: vec![],
             };
@@ -67,14 +72,20 @@ async fn search_inner(
                 if !defs.is_empty() {
                     let mut empty_aggs = HashMap::new();
                     for (name, _) in &defs {
-                        empty_aggs.insert(name.clone(), AggregationResult {
-                            doc_count_error_upper_bound: Some(0),
-                            sum_other_doc_count: Some(0),
-                            buckets: Some(vec![]),
-                            value: None,
-                        });
+                        empty_aggs.insert(
+                            name.clone(),
+                            AggregationResult {
+                                doc_count_error_upper_bound: Some(0),
+                                sum_other_doc_count: Some(0),
+                                buckets: Some(vec![]),
+                                value: None,
+                            },
+                        );
                     }
-                    Some(apply_typed_keys(empty_aggs, params.typed_keys.unwrap_or(false)))
+                    Some(apply_typed_keys(
+                        empty_aggs,
+                        params.typed_keys.unwrap_or(false),
+                    ))
                 } else {
                     None
                 }
@@ -87,7 +98,8 @@ async fn search_inner(
                 _shards: ShardsInfo::ok(),
                 hits: envelope,
                 aggregations,
-            }).into_response());
+            })
+            .into_response());
         }
         return Err(EsError::IndexNotFound(index));
     }
@@ -106,7 +118,8 @@ async fn search_inner(
         }
 
         let start = Instant::now();
-        let (hits, _) = reader::search(handle, translated.clone(), from, size, handle.name.clone()).await?;
+        let (hits, _) =
+            reader::search(handle, translated.clone(), from, size, handle.name.clone()).await?;
 
         // Execute aggregations if requested
         let aggregations = if let Some(ref defs) = agg_defs {
@@ -133,7 +146,8 @@ async fn search_inner(
             _shards: ShardsInfo::ok(),
             hits,
             aggregations,
-        }).into_response());
+        })
+        .into_response());
     }
 
     // Multi-index search - merge results
@@ -149,7 +163,15 @@ async fn search_inner(
         if let Some(sort_val) = &req.sort {
             translated.sort_clauses = translator::parse_sort(sort_val, &mapping);
         }
-        match reader::search(handle, translated.clone(), 0, from + size, handle.name.clone()).await {
+        match reader::search(
+            handle,
+            translated.clone(),
+            0,
+            from + size,
+            handle.name.clone(),
+        )
+        .await
+        {
             Ok((hits, _)) => {
                 total_count += hits.total.value;
                 if let Some(ms) = hits.max_score {
@@ -180,7 +202,10 @@ async fn search_inner(
     }
 
     all_hits.sort_by(|a, b| {
-        b._score.unwrap_or(0.0).partial_cmp(&a._score.unwrap_or(0.0)).unwrap_or(std::cmp::Ordering::Equal)
+        b._score
+            .unwrap_or(0.0)
+            .partial_cmp(&a._score.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
     let paginated: Vec<Hit> = all_hits.into_iter().skip(from).take(size).collect();
     let took = start.elapsed().as_millis() as u64;
@@ -189,16 +214,23 @@ async fn search_inner(
     let aggregations = if !merged_aggs.is_empty() {
         let mut agg_results = HashMap::new();
         for (name, counts) in merged_aggs {
-            let mut buckets: Vec<_> = counts.into_iter()
-                .map(|(key, count)| crate::model::search::AggBucket { key, doc_count: count })
+            let mut buckets: Vec<_> = counts
+                .into_iter()
+                .map(|(key, count)| crate::model::search::AggBucket {
+                    key,
+                    doc_count: count,
+                })
                 .collect();
             buckets.sort_by(|a, b| b.doc_count.cmp(&a.doc_count));
-            agg_results.insert(name, AggregationResult {
-                doc_count_error_upper_bound: Some(0),
-                sum_other_doc_count: Some(0),
-                buckets: Some(buckets),
-                value: None,
-            });
+            agg_results.insert(
+                name,
+                AggregationResult {
+                    doc_count_error_upper_bound: Some(0),
+                    sum_other_doc_count: Some(0),
+                    buckets: Some(buckets),
+                    value: None,
+                },
+            );
         }
         Some(apply_typed_keys(agg_results, typed_keys))
     } else {
@@ -206,7 +238,10 @@ async fn search_inner(
     };
 
     let envelope = HitsEnvelope {
-        total: HitsTotal { value: total_count, relation: "eq".to_string() },
+        total: HitsTotal {
+            value: total_count,
+            relation: "eq".to_string(),
+        },
         max_score,
         hits: paginated,
     };
@@ -216,7 +251,8 @@ async fn search_inner(
         _shards: ShardsInfo::ok(),
         hits: envelope,
         aggregations,
-    }).into_response())
+    })
+    .into_response())
 }
 
 pub async fn count(
@@ -261,7 +297,8 @@ async fn count_inner(
     Ok(Json(CountResponse {
         count: total,
         _shards: ShardsInfo::ok(),
-    }).into_response())
+    })
+    .into_response())
 }
 
 pub async fn delete_by_query(

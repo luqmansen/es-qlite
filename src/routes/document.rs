@@ -185,9 +185,7 @@ async fn update_doc_inner(
         };
 
         // Merge params into document
-        if let (Some(base), serde_json::Value::Object(updates)) =
-            (doc.as_object_mut(), &params)
-        {
+        if let (Some(base), serde_json::Value::Object(updates)) = (doc.as_object_mut(), &params) {
             let fields_to_remove: Vec<String> = updates
                 .get("fieldsToRemove")
                 .and_then(|v| v.as_array())

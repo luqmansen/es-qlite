@@ -18,9 +18,9 @@ mod common;
 
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::path::Path;
 use std::process::Command;
 use std::sync::OnceLock;
-use std::path::Path;
 
 // ─── Docker OpenSearch Management ───────────────────────────────────────────
 
@@ -54,13 +54,20 @@ fn ensure_opensearch_sync() -> Option<String> {
     // Start OpenSearch container
     let result = Command::new("docker")
         .args([
-            "run", "-d",
-            "--name", CONTAINER_NAME,
-            "-p", &format!("{}:9200", port),
-            "-e", "discovery.type=single-node",
-            "-e", "DISABLE_SECURITY_PLUGIN=true",
-            "-e", "OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!",
-            "-e", "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m",
+            "run",
+            "-d",
+            "--name",
+            CONTAINER_NAME,
+            "-p",
+            &format!("{}:9200", port),
+            "-e",
+            "discovery.type=single-node",
+            "-e",
+            "DISABLE_SECURITY_PLUGIN=true",
+            "-e",
+            "OPENSEARCH_INITIAL_ADMIN_PASSWORD=Admin123!",
+            "-e",
+            "OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m",
             OPENSEARCH_IMAGE,
         ])
         .output();
@@ -178,7 +185,12 @@ async fn search(base: &str, index: &str, body: Value) -> Value {
         .send()
         .await
         .expect("search");
-    assert!(resp.status().is_success(), "Search failed on {}/{}", base, index);
+    assert!(
+        resp.status().is_success(),
+        "Search failed on {}/{}",
+        base,
+        index
+    );
     resp.json().await.expect("parse json")
 }
 
@@ -219,7 +231,7 @@ async fn setup_both(
     os_base: &str,
     index: &str,
     mappings: Value,
-    docs: &[(& str, Value)],
+    docs: &[(&str, Value)],
 ) {
     for base in [es_base, os_base] {
         cleanup(base, &[index]).await;
@@ -263,11 +275,7 @@ fn assert_same_structure(es: &Value, os: &Value, path: &str) {
                     os_map.keys().collect::<Vec<_>>(),
                     es_map.keys().collect::<Vec<_>>()
                 );
-                assert_same_structure(
-                    &es_map[key],
-                    &os_map[key],
-                    &format!("{path}.{key}"),
-                );
+                assert_same_structure(&es_map[key], &os_map[key], &format!("{path}.{key}"));
             }
         }
         (Value::Array(es_arr), Value::Array(os_arr)) => {
@@ -423,7 +431,9 @@ fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
 
 #[tokio::test]
 async fn compare_structure_match_all() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-struct-matchall";
 
     let mappings = json!({"properties": {
@@ -432,8 +442,14 @@ async fn compare_structure_match_all() {
         "price": {"type": "float"}
     }});
     let docs = vec![
-        ("1", json!({"title": "first document", "status": "active", "price": 10.0})),
-        ("2", json!({"title": "second document", "status": "inactive", "price": 20.0})),
+        (
+            "1",
+            json!({"title": "first document", "status": "active", "price": 10.0}),
+        ),
+        (
+            "2",
+            json!({"title": "second document", "status": "inactive", "price": 20.0}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -462,7 +478,9 @@ async fn compare_structure_match_all() {
 
 #[tokio::test]
 async fn compare_structure_search_hits() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-struct-hits";
 
     let mappings = json!({"properties": {
@@ -470,9 +488,18 @@ async fn compare_structure_search_hits() {
         "category": {"type": "keyword"}
     }});
     let docs = vec![
-        ("1", json!({"title": "rust programming language", "category": "tech"})),
-        ("2", json!({"title": "rust cookbook for beginners", "category": "tech"})),
-        ("3", json!({"title": "python web development", "category": "tech"})),
+        (
+            "1",
+            json!({"title": "rust programming language", "category": "tech"}),
+        ),
+        (
+            "2",
+            json!({"title": "rust cookbook for beginners", "category": "tech"}),
+        ),
+        (
+            "3",
+            json!({"title": "python web development", "category": "tech"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -499,7 +526,11 @@ async fn compare_structure_search_hits() {
             .iter()
             .find(|h| h["_id"].as_str().unwrap() == id)
             .unwrap_or_else(|| panic!("OpenSearch missing hit with _id={}", id));
-        assert_eq!(es_hit["_source"], os_hit["_source"], "_source mismatch for _id={}", id);
+        assert_eq!(
+            es_hit["_source"], os_hit["_source"],
+            "_source mismatch for _id={}",
+            id
+        );
     }
 
     cleanup_both(es, os, &[idx]).await;
@@ -507,7 +538,9 @@ async fn compare_structure_search_hits() {
 
 #[tokio::test]
 async fn compare_structure_aggregation() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-struct-agg";
 
     let mappings = json!({"properties": {
@@ -545,7 +578,9 @@ async fn compare_structure_aggregation() {
 
 #[tokio::test]
 async fn compare_structure_typed_keys() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-struct-typed";
 
     let mappings = json!({"properties": {
@@ -591,7 +626,9 @@ async fn compare_structure_typed_keys() {
 
 #[tokio::test]
 async fn compare_structure_count() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-struct-count";
 
     let mappings = json!({"properties": {
@@ -623,7 +660,9 @@ async fn compare_structure_count() {
 
 #[tokio::test]
 async fn compare_ranking_single_term() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-rank-single";
 
     let mappings = json!({"properties": {
@@ -632,10 +671,22 @@ async fn compare_ranking_single_term() {
     }});
     // Documents with varying relevance to "rust"
     let docs = vec![
-        ("1", json!({"title": "rust", "body": "The rust programming language is fast"})),
-        ("2", json!({"title": "rust programming guide", "body": "Learn rust from scratch"})),
-        ("3", json!({"title": "python basics", "body": "A guide to python with some rust mentions"})),
-        ("4", json!({"title": "cooking recipes", "body": "Nothing about programming"})),
+        (
+            "1",
+            json!({"title": "rust", "body": "The rust programming language is fast"}),
+        ),
+        (
+            "2",
+            json!({"title": "rust programming guide", "body": "Learn rust from scratch"}),
+        ),
+        (
+            "3",
+            json!({"title": "python basics", "body": "A guide to python with some rust mentions"}),
+        ),
+        (
+            "4",
+            json!({"title": "cooking recipes", "body": "Nothing about programming"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -661,7 +712,9 @@ async fn compare_ranking_single_term() {
 
 #[tokio::test]
 async fn compare_ranking_multi_match() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-rank-multi";
 
     let mappings = json!({"properties": {
@@ -670,10 +723,22 @@ async fn compare_ranking_multi_match() {
         "category": {"type": "keyword"}
     }});
     let docs = vec![
-        ("1", json!({"title": "rust guide", "description": "comprehensive rust tutorial", "category": "programming"})),
-        ("2", json!({"title": "rust cookbook", "description": "practical rust recipes", "category": "programming"})),
-        ("3", json!({"title": "web development", "description": "building web apps with rust", "category": "web"})),
-        ("4", json!({"title": "database systems", "description": "sql and nosql databases", "category": "databases"})),
+        (
+            "1",
+            json!({"title": "rust guide", "description": "comprehensive rust tutorial", "category": "programming"}),
+        ),
+        (
+            "2",
+            json!({"title": "rust cookbook", "description": "practical rust recipes", "category": "programming"}),
+        ),
+        (
+            "3",
+            json!({"title": "web development", "description": "building web apps with rust", "category": "web"}),
+        ),
+        (
+            "4",
+            json!({"title": "database systems", "description": "sql and nosql databases", "category": "databases"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -703,7 +768,9 @@ async fn compare_ranking_multi_match() {
 
 #[tokio::test]
 async fn compare_ranking_bool_must_filter() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-rank-bool";
 
     let mappings = json!({"properties": {
@@ -712,10 +779,22 @@ async fn compare_ranking_bool_must_filter() {
         "status": {"type": "keyword"}
     }});
     let docs = vec![
-        ("1", json!({"title": "rust programming", "price": 29.99, "status": "published"})),
-        ("2", json!({"title": "advanced rust", "price": 49.99, "status": "published"})),
-        ("3", json!({"title": "rust for beginners", "price": 19.99, "status": "draft"})),
-        ("4", json!({"title": "python programming", "price": 24.99, "status": "published"})),
+        (
+            "1",
+            json!({"title": "rust programming", "price": 29.99, "status": "published"}),
+        ),
+        (
+            "2",
+            json!({"title": "advanced rust", "price": 49.99, "status": "published"}),
+        ),
+        (
+            "3",
+            json!({"title": "rust for beginners", "price": 19.99, "status": "draft"}),
+        ),
+        (
+            "4",
+            json!({"title": "python programming", "price": 24.99, "status": "published"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -747,7 +826,9 @@ async fn compare_ranking_bool_must_filter() {
 
 #[tokio::test]
 async fn compare_aggregation_terms() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-agg-terms";
 
     let mappings = json!({"properties": {
@@ -756,11 +837,26 @@ async fn compare_aggregation_terms() {
         "status": {"type": "keyword"}
     }});
     let docs = vec![
-        ("1", json!({"title": "a", "category": "books", "status": "active"})),
-        ("2", json!({"title": "b", "category": "books", "status": "active"})),
-        ("3", json!({"title": "c", "category": "electronics", "status": "active"})),
-        ("4", json!({"title": "d", "category": "electronics", "status": "inactive"})),
-        ("5", json!({"title": "e", "category": "clothing", "status": "inactive"})),
+        (
+            "1",
+            json!({"title": "a", "category": "books", "status": "active"}),
+        ),
+        (
+            "2",
+            json!({"title": "b", "category": "books", "status": "active"}),
+        ),
+        (
+            "3",
+            json!({"title": "c", "category": "electronics", "status": "active"}),
+        ),
+        (
+            "4",
+            json!({"title": "d", "category": "electronics", "status": "inactive"}),
+        ),
+        (
+            "5",
+            json!({"title": "e", "category": "clothing", "status": "inactive"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -790,7 +886,9 @@ async fn compare_aggregation_terms() {
 
 #[tokio::test]
 async fn compare_aggregation_with_filter() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-agg-filter";
 
     let mappings = json!({"properties": {
@@ -799,10 +897,22 @@ async fn compare_aggregation_with_filter() {
         "price": {"type": "float"}
     }});
     let docs = vec![
-        ("1", json!({"title": "cheap book", "category": "books", "price": 5.0})),
-        ("2", json!({"title": "expensive book", "category": "books", "price": 50.0})),
-        ("3", json!({"title": "cheap toy", "category": "toys", "price": 3.0})),
-        ("4", json!({"title": "expensive toy", "category": "toys", "price": 100.0})),
+        (
+            "1",
+            json!({"title": "cheap book", "category": "books", "price": 5.0}),
+        ),
+        (
+            "2",
+            json!({"title": "expensive book", "category": "books", "price": 50.0}),
+        ),
+        (
+            "3",
+            json!({"title": "cheap toy", "category": "toys", "price": 3.0}),
+        ),
+        (
+            "4",
+            json!({"title": "expensive toy", "category": "toys", "price": 100.0}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -836,7 +946,9 @@ async fn compare_aggregation_with_filter() {
 
 #[tokio::test]
 async fn compare_sort_single_field() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-sort-single";
 
     let mappings = json!({"properties": {
@@ -877,7 +989,9 @@ async fn compare_sort_single_field() {
 
 #[tokio::test]
 async fn compare_sort_multi_field() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-sort-multi";
 
     let mappings = json!({"properties": {
@@ -886,11 +1000,26 @@ async fn compare_sort_multi_field() {
         "name": {"type": "keyword"}
     }});
     let docs = vec![
-        ("1", json!({"category": "A", "price": 20.0, "name": "item-1"})),
-        ("2", json!({"category": "B", "price": 10.0, "name": "item-2"})),
-        ("3", json!({"category": "A", "price": 10.0, "name": "item-3"})),
-        ("4", json!({"category": "B", "price": 20.0, "name": "item-4"})),
-        ("5", json!({"category": "A", "price": 10.0, "name": "item-5"})),
+        (
+            "1",
+            json!({"category": "A", "price": 20.0, "name": "item-1"}),
+        ),
+        (
+            "2",
+            json!({"category": "B", "price": 10.0, "name": "item-2"}),
+        ),
+        (
+            "3",
+            json!({"category": "A", "price": 10.0, "name": "item-3"}),
+        ),
+        (
+            "4",
+            json!({"category": "B", "price": 20.0, "name": "item-4"}),
+        ),
+        (
+            "5",
+            json!({"category": "A", "price": 10.0, "name": "item-5"}),
+        ),
     ];
     setup_both(es, os, idx, mappings, &docs).await;
 
@@ -916,132 +1045,179 @@ async fn compare_sort_multi_field() {
 /// Generate a realistic corpus of Wikipedia-style articles for testing.
 fn wikipedia_corpus() -> Vec<(&'static str, Value)> {
     vec![
-        ("1", json!({
-            "title": "Rust (programming language)",
-            "body": "Rust is a multi-paradigm, general-purpose programming language that emphasizes performance, type safety, and concurrency. It enforces memory safety, meaning that all references point to valid memory, without a garbage collector. Rust was originally designed by Graydon Hoare at Mozilla Research, with contributions from Dave Herman, Brendan Eich, and others. The designers refined the language while writing the Servo experimental browser engine and the Rust compiler.",
-            "category": "programming",
-            "tags": "systems,memory-safe,compiled",
-            "year": 2010,
-            "rating": 4.8
-        })),
-        ("2", json!({
-            "title": "Python (programming language)",
-            "body": "Python is a high-level, general-purpose programming language. Its design philosophy emphasizes code readability with the use of significant indentation. Python is dynamically typed and garbage-collected. It supports multiple programming paradigms, including structured, object-oriented and functional programming. It was conceived in the late 1980s by Guido van Rossum at Centrum Wiskunde & Informatica in the Netherlands as a successor to the ABC programming language.",
-            "category": "programming",
-            "tags": "interpreted,dynamic,scripting",
-            "year": 1991,
-            "rating": 4.7
-        })),
-        ("3", json!({
-            "title": "SQLite",
-            "body": "SQLite is a relational database management system contained in a C library. In contrast to many other database management systems, SQLite is not a client-server database engine. Rather, it is embedded into the end program. SQLite generally follows PostgreSQL syntax. SQLite uses a dynamically and weakly typed SQL syntax that does not guarantee the domain integrity. SQLite is a popular choice as embedded database software for local storage in application software.",
-            "category": "database",
-            "tags": "embedded,relational,lightweight",
-            "year": 2000,
-            "rating": 4.5
-        })),
-        ("4", json!({
-            "title": "Elasticsearch",
-            "body": "Elasticsearch is a search engine based on the Lucene library. It provides a distributed, multitenant-capable full-text search engine with an HTTP web interface and schema-free JSON documents. Elasticsearch is developed in Java and is dual-licensed under the source-available Server Side Public License and the Elastic License. Elasticsearch is the most popular enterprise search engine followed by Apache Solr, also based on Lucene.",
-            "category": "database",
-            "tags": "search,distributed,full-text",
-            "year": 2010,
-            "rating": 4.3
-        })),
-        ("5", json!({
-            "title": "PostgreSQL",
-            "body": "PostgreSQL also known as Postgres, is a free and open-source relational database management system emphasizing extensibility and SQL compliance. It was originally named POSTGRES, referring to its origins as a successor to the Ingres database developed at the University of California, Berkeley. PostgreSQL features transactions with atomicity, consistency, isolation, durability properties, automatically updatable views, materialized views, triggers, foreign keys, and stored procedures.",
-            "category": "database",
-            "tags": "relational,open-source,enterprise",
-            "year": 1996,
-            "rating": 4.6
-        })),
-        ("6", json!({
-            "title": "Linux kernel",
-            "body": "The Linux kernel is a free and open-source, monolithic, modular, multitasking, Unix-like operating system kernel. It was originally authored in 1991 by Linus Torvalds for his i386-based PC, and it was soon adopted as the kernel for the GNU operating system. Linux is deployed on a wide variety of computing systems, such as embedded devices, mobile devices, personal computers, servers, mainframes, and supercomputers.",
-            "category": "operating-system",
-            "tags": "kernel,open-source,unix",
-            "year": 1991,
-            "rating": 4.9
-        })),
-        ("7", json!({
-            "title": "Docker (software)",
-            "body": "Docker is a set of platform as a service products that use OS-level virtualization to deliver software in packages called containers. The service has both free and premium tiers. The software that hosts the containers is called Docker Engine. It was first released in 2013 and is developed by Docker, Inc. Docker can package an application and its dependencies in a virtual container that can run on any Linux, Windows, or macOS computer.",
-            "category": "devops",
-            "tags": "containers,virtualization,deployment",
-            "year": 2013,
-            "rating": 4.4
-        })),
-        ("8", json!({
-            "title": "Kubernetes",
-            "body": "Kubernetes is an open-source container orchestration system for automating software deployment, scaling, and management. Originally designed by Google, the project is now maintained by a worldwide community of contributors, and the trademark is held by the Cloud Native Computing Foundation. Kubernetes works with Docker and other container tools, and handles scheduling onto nodes in a compute cluster and manages workloads.",
-            "category": "devops",
-            "tags": "orchestration,containers,cloud-native",
-            "year": 2014,
-            "rating": 4.5
-        })),
-        ("9", json!({
-            "title": "Git (software)",
-            "body": "Git is a distributed version control system that tracks versions of files. It is often used to control source code by programmers collaboratively developing software. Git was originally authored by Linus Torvalds in 2005 for development of the Linux kernel. As with most other distributed version control systems, and unlike most client-server systems, every Git directory on every computer is a full-fledged repository with complete history and full version-tracking abilities.",
-            "category": "devtools",
-            "tags": "version-control,distributed,open-source",
-            "year": 2005,
-            "rating": 4.8
-        })),
-        ("10", json!({
-            "title": "WebAssembly",
-            "body": "WebAssembly is a portable binary-code format and a corresponding text format for executable programs as well as software interfaces for facilitating interactions between such programs and their host environment. The main goal of WebAssembly is to enable high-performance applications on web pages, but it is also designed to be usable in non-web environments. WebAssembly can be used alongside JavaScript for web development.",
-            "category": "web",
-            "tags": "binary,portable,performance",
-            "year": 2017,
-            "rating": 4.2
-        })),
-        ("11", json!({
-            "title": "GraphQL",
-            "body": "GraphQL is an open-source data query and manipulation language for APIs, and a query runtime engine. GraphQL was developed internally by Meta in 2012 before being publicly released in 2015. It provides an approach to developing web APIs and has been compared and contrasted with REST and other web service architectures. It allows clients to define the structure of the data required, and the same structure of the data is returned from the server.",
-            "category": "web",
-            "tags": "api,query-language,meta",
-            "year": 2015,
-            "rating": 4.1
-        })),
-        ("12", json!({
-            "title": "Redis",
-            "body": "Redis is an open-source in-memory storage, used as a distributed, in-memory key-value database, cache, and message broker, with optional durability. Because it holds all data in memory and because of its design, Redis offers low-latency reads and writes, making it particularly suitable for use cases that require a cache. Redis is the most popular key-value database and is used by tech industry giants such as Twitter, GitHub, and Snapchat.",
-            "category": "database",
-            "tags": "in-memory,cache,key-value",
-            "year": 2009,
-            "rating": 4.5
-        })),
-        ("13", json!({
-            "title": "TypeScript",
-            "body": "TypeScript is a free and open-source high-level programming language developed by Microsoft that adds static typing with optional type annotations to JavaScript. It is designed for the development of large applications and transpiles to JavaScript. TypeScript may be used to develop JavaScript applications for both client-side and server-side execution. TypeScript supports definition files that can contain type information of existing JavaScript libraries.",
-            "category": "programming",
-            "tags": "typed,javascript,microsoft",
-            "year": 2012,
-            "rating": 4.6
-        })),
-        ("14", json!({
-            "title": "Apache Kafka",
-            "body": "Apache Kafka is a distributed event store and stream-processing platform. It is an open-source system developed by the Apache Software Foundation written in Java and Scala. The project aims to provide a unified, high-throughput, low-latency platform for handling real-time data feeds. Kafka can connect to external systems for data import and export via Kafka Connect, and provides the Kafka Streams libraries for stream processing applications.",
-            "category": "data-engineering",
-            "tags": "streaming,distributed,event-driven",
-            "year": 2011,
-            "rating": 4.4
-        })),
-        ("15", json!({
-            "title": "Nginx",
-            "body": "Nginx is a web server that can also be used as a reverse proxy, load balancer, mail proxy and HTTP cache. The software was created by Igor Sysoev and publicly released in 2004. Nginx is free and open-source software, released under the terms of the 2-clause BSD license. A large fraction of web servers use Nginx, often as a load balancer. Nginx is known for its high performance, stability, rich feature set, simple configuration, and low resource consumption.",
-            "category": "web",
-            "tags": "web-server,reverse-proxy,load-balancer",
-            "year": 2004,
-            "rating": 4.6
-        })),
+        (
+            "1",
+            json!({
+                "title": "Rust (programming language)",
+                "body": "Rust is a multi-paradigm, general-purpose programming language that emphasizes performance, type safety, and concurrency. It enforces memory safety, meaning that all references point to valid memory, without a garbage collector. Rust was originally designed by Graydon Hoare at Mozilla Research, with contributions from Dave Herman, Brendan Eich, and others. The designers refined the language while writing the Servo experimental browser engine and the Rust compiler.",
+                "category": "programming",
+                "tags": "systems,memory-safe,compiled",
+                "year": 2010,
+                "rating": 4.8
+            }),
+        ),
+        (
+            "2",
+            json!({
+                "title": "Python (programming language)",
+                "body": "Python is a high-level, general-purpose programming language. Its design philosophy emphasizes code readability with the use of significant indentation. Python is dynamically typed and garbage-collected. It supports multiple programming paradigms, including structured, object-oriented and functional programming. It was conceived in the late 1980s by Guido van Rossum at Centrum Wiskunde & Informatica in the Netherlands as a successor to the ABC programming language.",
+                "category": "programming",
+                "tags": "interpreted,dynamic,scripting",
+                "year": 1991,
+                "rating": 4.7
+            }),
+        ),
+        (
+            "3",
+            json!({
+                "title": "SQLite",
+                "body": "SQLite is a relational database management system contained in a C library. In contrast to many other database management systems, SQLite is not a client-server database engine. Rather, it is embedded into the end program. SQLite generally follows PostgreSQL syntax. SQLite uses a dynamically and weakly typed SQL syntax that does not guarantee the domain integrity. SQLite is a popular choice as embedded database software for local storage in application software.",
+                "category": "database",
+                "tags": "embedded,relational,lightweight",
+                "year": 2000,
+                "rating": 4.5
+            }),
+        ),
+        (
+            "4",
+            json!({
+                "title": "Elasticsearch",
+                "body": "Elasticsearch is a search engine based on the Lucene library. It provides a distributed, multitenant-capable full-text search engine with an HTTP web interface and schema-free JSON documents. Elasticsearch is developed in Java and is dual-licensed under the source-available Server Side Public License and the Elastic License. Elasticsearch is the most popular enterprise search engine followed by Apache Solr, also based on Lucene.",
+                "category": "database",
+                "tags": "search,distributed,full-text",
+                "year": 2010,
+                "rating": 4.3
+            }),
+        ),
+        (
+            "5",
+            json!({
+                "title": "PostgreSQL",
+                "body": "PostgreSQL also known as Postgres, is a free and open-source relational database management system emphasizing extensibility and SQL compliance. It was originally named POSTGRES, referring to its origins as a successor to the Ingres database developed at the University of California, Berkeley. PostgreSQL features transactions with atomicity, consistency, isolation, durability properties, automatically updatable views, materialized views, triggers, foreign keys, and stored procedures.",
+                "category": "database",
+                "tags": "relational,open-source,enterprise",
+                "year": 1996,
+                "rating": 4.6
+            }),
+        ),
+        (
+            "6",
+            json!({
+                "title": "Linux kernel",
+                "body": "The Linux kernel is a free and open-source, monolithic, modular, multitasking, Unix-like operating system kernel. It was originally authored in 1991 by Linus Torvalds for his i386-based PC, and it was soon adopted as the kernel for the GNU operating system. Linux is deployed on a wide variety of computing systems, such as embedded devices, mobile devices, personal computers, servers, mainframes, and supercomputers.",
+                "category": "operating-system",
+                "tags": "kernel,open-source,unix",
+                "year": 1991,
+                "rating": 4.9
+            }),
+        ),
+        (
+            "7",
+            json!({
+                "title": "Docker (software)",
+                "body": "Docker is a set of platform as a service products that use OS-level virtualization to deliver software in packages called containers. The service has both free and premium tiers. The software that hosts the containers is called Docker Engine. It was first released in 2013 and is developed by Docker, Inc. Docker can package an application and its dependencies in a virtual container that can run on any Linux, Windows, or macOS computer.",
+                "category": "devops",
+                "tags": "containers,virtualization,deployment",
+                "year": 2013,
+                "rating": 4.4
+            }),
+        ),
+        (
+            "8",
+            json!({
+                "title": "Kubernetes",
+                "body": "Kubernetes is an open-source container orchestration system for automating software deployment, scaling, and management. Originally designed by Google, the project is now maintained by a worldwide community of contributors, and the trademark is held by the Cloud Native Computing Foundation. Kubernetes works with Docker and other container tools, and handles scheduling onto nodes in a compute cluster and manages workloads.",
+                "category": "devops",
+                "tags": "orchestration,containers,cloud-native",
+                "year": 2014,
+                "rating": 4.5
+            }),
+        ),
+        (
+            "9",
+            json!({
+                "title": "Git (software)",
+                "body": "Git is a distributed version control system that tracks versions of files. It is often used to control source code by programmers collaboratively developing software. Git was originally authored by Linus Torvalds in 2005 for development of the Linux kernel. As with most other distributed version control systems, and unlike most client-server systems, every Git directory on every computer is a full-fledged repository with complete history and full version-tracking abilities.",
+                "category": "devtools",
+                "tags": "version-control,distributed,open-source",
+                "year": 2005,
+                "rating": 4.8
+            }),
+        ),
+        (
+            "10",
+            json!({
+                "title": "WebAssembly",
+                "body": "WebAssembly is a portable binary-code format and a corresponding text format for executable programs as well as software interfaces for facilitating interactions between such programs and their host environment. The main goal of WebAssembly is to enable high-performance applications on web pages, but it is also designed to be usable in non-web environments. WebAssembly can be used alongside JavaScript for web development.",
+                "category": "web",
+                "tags": "binary,portable,performance",
+                "year": 2017,
+                "rating": 4.2
+            }),
+        ),
+        (
+            "11",
+            json!({
+                "title": "GraphQL",
+                "body": "GraphQL is an open-source data query and manipulation language for APIs, and a query runtime engine. GraphQL was developed internally by Meta in 2012 before being publicly released in 2015. It provides an approach to developing web APIs and has been compared and contrasted with REST and other web service architectures. It allows clients to define the structure of the data required, and the same structure of the data is returned from the server.",
+                "category": "web",
+                "tags": "api,query-language,meta",
+                "year": 2015,
+                "rating": 4.1
+            }),
+        ),
+        (
+            "12",
+            json!({
+                "title": "Redis",
+                "body": "Redis is an open-source in-memory storage, used as a distributed, in-memory key-value database, cache, and message broker, with optional durability. Because it holds all data in memory and because of its design, Redis offers low-latency reads and writes, making it particularly suitable for use cases that require a cache. Redis is the most popular key-value database and is used by tech industry giants such as Twitter, GitHub, and Snapchat.",
+                "category": "database",
+                "tags": "in-memory,cache,key-value",
+                "year": 2009,
+                "rating": 4.5
+            }),
+        ),
+        (
+            "13",
+            json!({
+                "title": "TypeScript",
+                "body": "TypeScript is a free and open-source high-level programming language developed by Microsoft that adds static typing with optional type annotations to JavaScript. It is designed for the development of large applications and transpiles to JavaScript. TypeScript may be used to develop JavaScript applications for both client-side and server-side execution. TypeScript supports definition files that can contain type information of existing JavaScript libraries.",
+                "category": "programming",
+                "tags": "typed,javascript,microsoft",
+                "year": 2012,
+                "rating": 4.6
+            }),
+        ),
+        (
+            "14",
+            json!({
+                "title": "Apache Kafka",
+                "body": "Apache Kafka is a distributed event store and stream-processing platform. It is an open-source system developed by the Apache Software Foundation written in Java and Scala. The project aims to provide a unified, high-throughput, low-latency platform for handling real-time data feeds. Kafka can connect to external systems for data import and export via Kafka Connect, and provides the Kafka Streams libraries for stream processing applications.",
+                "category": "data-engineering",
+                "tags": "streaming,distributed,event-driven",
+                "year": 2011,
+                "rating": 4.4
+            }),
+        ),
+        (
+            "15",
+            json!({
+                "title": "Nginx",
+                "body": "Nginx is a web server that can also be used as a reverse proxy, load balancer, mail proxy and HTTP cache. The software was created by Igor Sysoev and publicly released in 2004. Nginx is free and open-source software, released under the terms of the 2-clause BSD license. A large fraction of web servers use Nginx, often as a load balancer. Nginx is known for its high performance, stability, rich feature set, simple configuration, and low resource consumption.",
+                "category": "web",
+                "tags": "web-server,reverse-proxy,load-balancer",
+                "year": 2004,
+                "rating": 4.6
+            }),
+        ),
     ]
 }
 
 #[tokio::test]
 async fn compare_corpus_full_text_ranking() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-corpus-fts";
 
     let mappings = json!({"properties": {
@@ -1059,14 +1235,22 @@ async fn compare_corpus_full_text_ranking() {
     let query = json!({"query": {"match": {"title": "programming"}}, "size": 15});
     let es_body = search(es, idx, query.clone()).await;
     let os_body = search(os, idx, query).await;
-    assert_same_value(&es_body["hits"]["total"]["value"], &os_body["hits"]["total"]["value"], "corpus: match title=programming");
+    assert_same_value(
+        &es_body["hits"]["total"]["value"],
+        &os_body["hits"]["total"]["value"],
+        "corpus: match title=programming",
+    );
     assert_similar_ranking(&es_body, &os_body, 5, 0.8);
 
     // Query 2: Multi-word search
     let query = json!({"query": {"match": {"body": "database management system"}}, "size": 15});
     let es_body = search(es, idx, query.clone()).await;
     let os_body = search(os, idx, query).await;
-    assert_same_value(&es_body["hits"]["total"]["value"], &os_body["hits"]["total"]["value"], "corpus: match body=database management system");
+    assert_same_value(
+        &es_body["hits"]["total"]["value"],
+        &os_body["hits"]["total"]["value"],
+        "corpus: match body=database management system",
+    );
     assert_similar_ranking(&es_body, &os_body, 5, 0.6);
 
     // Query 3: Multi-match across title and body
@@ -1076,7 +1260,11 @@ async fn compare_corpus_full_text_ranking() {
     });
     let es_body = search(es, idx, query.clone()).await;
     let os_body = search(os, idx, query).await;
-    assert_same_value(&es_body["hits"]["total"]["value"], &os_body["hits"]["total"]["value"], "corpus: multi_match open-source distributed");
+    assert_same_value(
+        &es_body["hits"]["total"]["value"],
+        &os_body["hits"]["total"]["value"],
+        "corpus: multi_match open-source distributed",
+    );
     assert_similar_ranking(&es_body, &os_body, 5, 0.6);
 
     // Query 4: Bool query — must match + filter
@@ -1091,7 +1279,11 @@ async fn compare_corpus_full_text_ranking() {
     });
     let es_body = search(es, idx, query.clone()).await;
     let os_body = search(os, idx, query).await;
-    assert_same_value(&es_body["hits"]["total"]["value"], &os_body["hits"]["total"]["value"], "corpus: bool must+filter");
+    assert_same_value(
+        &es_body["hits"]["total"]["value"],
+        &os_body["hits"]["total"]["value"],
+        "corpus: bool must+filter",
+    );
     assert_similar_ranking(&es_body, &os_body, 5, 0.8);
 
     // Query 5: Aggregation on category
@@ -1116,7 +1308,11 @@ async fn compare_corpus_full_text_ranking() {
     });
     let es_body = search(es, idx, query.clone()).await;
     let os_body = search(os, idx, query).await;
-    assert_same_value(&es_body["hits"]["total"]["value"], &os_body["hits"]["total"]["value"], "corpus: agg with filter");
+    assert_same_value(
+        &es_body["hits"]["total"]["value"],
+        &os_body["hits"]["total"]["value"],
+        "corpus: agg with filter",
+    );
     assert_same_buckets(
         &es_body["aggregations"]["by_category"],
         &os_body["aggregations"]["by_category"],
@@ -1128,7 +1324,9 @@ async fn compare_corpus_full_text_ranking() {
 
 #[tokio::test]
 async fn compare_corpus_sort_and_pagination() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-corpus-sort";
 
     let mappings = json!({"properties": {
@@ -1182,12 +1380,24 @@ async fn compare_corpus_sort_and_pagination() {
     assert_same_ranking(&es_p2, &os_p2);
 
     // Pages should not overlap
-    let p1_ids: Vec<&str> = es_p1["hits"]["hits"].as_array().unwrap()
-        .iter().map(|h| h["_id"].as_str().unwrap()).collect();
-    let p2_ids: Vec<&str> = es_p2["hits"]["hits"].as_array().unwrap()
-        .iter().map(|h| h["_id"].as_str().unwrap()).collect();
+    let p1_ids: Vec<&str> = es_p1["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["_id"].as_str().unwrap())
+        .collect();
+    let p2_ids: Vec<&str> = es_p2["hits"]["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["_id"].as_str().unwrap())
+        .collect();
     for id in &p1_ids {
-        assert!(!p2_ids.contains(id), "Page overlap: {} appears in both pages", id);
+        assert!(
+            !p2_ids.contains(id),
+            "Page overlap: {} appears in both pages",
+            id
+        );
     }
 
     cleanup_both(es, os, &[idx]).await;
@@ -1340,7 +1550,10 @@ async fn download_gutenberg_corpus() -> Vec<(String, Value)> {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    eprintln!("  Fetched metadata for {} books, now downloading full texts...", all_books.len());
+    eprintln!(
+        "  Fetched metadata for {} books, now downloading full texts...",
+        all_books.len()
+    );
 
     // Download full text for each book (up to 100K chars)
     let mut docs: Vec<(String, Value)> = Vec::new();
@@ -1504,7 +1717,9 @@ fn gutenberg_mappings() -> Value {
 
 #[tokio::test]
 async fn compare_gutenberg_ranking() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-gutenberg-rank";
 
     let docs = load_or_download_corpus().await;
@@ -1520,7 +1735,11 @@ async fn compare_gutenberg_ranking() {
     // Verify doc counts match
     let es_count = count(es, idx, json!({"query": {"match_all": {}}})).await;
     let os_count = count(os, idx, json!({"query": {"match_all": {}}})).await;
-    assert_same_value(&es_count["count"], &os_count["count"], "gutenberg doc count");
+    assert_same_value(
+        &es_count["count"],
+        &os_count["count"],
+        "gutenberg doc count",
+    );
 
     // Query 1: Classic literature search
     let query = json!({"query": {"match": {"body": "love and marriage"}}, "size": 20});
@@ -1528,7 +1747,10 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!("  'love and marriage': es-sqlite={} hits, OpenSearch={} hits", es_total, os_total);
+    eprintln!(
+        "  'love and marriage': es-sqlite={} hits, OpenSearch={} hits",
+        es_total, os_total
+    );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     // Query 2: Adventure theme
@@ -1537,7 +1759,10 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!("  'adventure sea voyage': es-sqlite={} hits, OpenSearch={} hits", es_total, os_total);
+    eprintln!(
+        "  'adventure sea voyage': es-sqlite={} hits, OpenSearch={} hits",
+        es_total, os_total
+    );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     // Query 3: Multi-match across title and body
@@ -1549,7 +1774,10 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!("  'war and peace' (multi_match): es-sqlite={} hits, OpenSearch={} hits", es_total, os_total);
+    eprintln!(
+        "  'war and peace' (multi_match): es-sqlite={} hits, OpenSearch={} hits",
+        es_total, os_total
+    );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     // Query 4: Bool must + filter (author filter)
@@ -1566,7 +1794,10 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!("  'science discovery nature' (bool+filter): es-sqlite={} hits, OpenSearch={} hits", es_total, os_total);
+    eprintln!(
+        "  'science discovery nature' (bool+filter): es-sqlite={} hits, OpenSearch={} hits",
+        es_total, os_total
+    );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     cleanup_both(es, os, &[idx]).await;
@@ -1574,7 +1805,9 @@ async fn compare_gutenberg_ranking() {
 
 #[tokio::test]
 async fn compare_gutenberg_aggregations() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-gutenberg-agg";
 
     let docs = load_or_download_corpus().await;
@@ -1635,7 +1868,9 @@ async fn compare_gutenberg_aggregations() {
 
 #[tokio::test]
 async fn compare_gutenberg_sort_pagination() {
-    let Some((es, os)) = require_both().await else { return };
+    let Some((es, os)) = require_both().await else {
+        return;
+    };
     let idx = "cmp-gutenberg-sort";
 
     let docs = load_or_download_corpus().await;

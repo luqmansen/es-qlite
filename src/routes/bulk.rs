@@ -10,20 +10,14 @@ use crate::model::bulk::{BulkAction, BulkItemResult, BulkResponse, BulkResponseI
 use crate::model::document::ShardsInfo;
 use crate::storage::{registry::IndexRegistry, writer};
 
-pub async fn bulk(
-    State(registry): State<Arc<IndexRegistry>>,
-    body: Bytes,
-) -> Response {
+pub async fn bulk(State(registry): State<Arc<IndexRegistry>>, body: Bytes) -> Response {
     match bulk_inner(registry, body).await {
         Ok(resp) => resp,
         Err(e) => e.into_response(),
     }
 }
 
-async fn bulk_inner(
-    registry: Arc<IndexRegistry>,
-    body: Bytes,
-) -> Result<Response, EsError> {
+async fn bulk_inner(registry: Arc<IndexRegistry>, body: Bytes) -> Result<Response, EsError> {
     let body_str = String::from_utf8_lossy(&body);
     let start = Instant::now();
     let lines: Vec<&str> = body_str.lines().filter(|l| !l.is_empty()).collect();

@@ -36,7 +36,8 @@ impl IndexRegistry {
 
     /// Scan data directory for existing .db files and open them.
     pub async fn load_existing(&self) -> Result<(), EsError> {
-        let read_dir = std::fs::read_dir(&self.data_dir).map_err(|e| EsError::Internal(e.to_string()))?;
+        let read_dir =
+            std::fs::read_dir(&self.data_dir).map_err(|e| EsError::Internal(e.to_string()))?;
 
         for entry in read_dir {
             let entry = entry.map_err(|e| EsError::Internal(e.to_string()))?;
@@ -171,7 +172,8 @@ impl IndexRegistry {
             entry.push(index.to_string());
         }
         // Persist: collect all aliases for this index
-        let index_aliases: Vec<String> = aliases.iter()
+        let index_aliases: Vec<String> = aliases
+            .iter()
             .filter(|(_, indices)| indices.contains(&index.to_string()))
             .map(|(alias, _)| alias.clone())
             .collect();
@@ -189,7 +191,8 @@ impl IndexRegistry {
             }
         }
         // Persist: collect remaining aliases for this index
-        let index_aliases: Vec<String> = aliases.iter()
+        let index_aliases: Vec<String> = aliases
+            .iter()
             .filter(|(_, indices)| indices.contains(&index.to_string()))
             .map(|(alias, _)| alias.clone())
             .collect();
@@ -206,13 +209,15 @@ impl IndexRegistry {
         let aliases_json = serde_json::to_string(aliases).unwrap_or_else(|_| "[]".to_string());
         let conn = handle.conn.clone();
         tokio::spawn(async move {
-            let _ = conn.call(move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO _meta (key, value) VALUES ('aliases', ?1)",
-                    rusqlite::params![&aliases_json],
-                )?;
-                Ok(())
-            }).await;
+            let _ = conn
+                .call(move |conn| {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO _meta (key, value) VALUES ('aliases', ?1)",
+                        rusqlite::params![&aliases_json],
+                    )?;
+                    Ok(())
+                })
+                .await;
         });
     }
 
@@ -231,7 +236,8 @@ impl IndexRegistry {
         };
         if let Some(index_names) = alias_indices {
             let indices = self.indices.read();
-            return index_names.iter()
+            return index_names
+                .iter()
                 .filter_map(|n| indices.get(n).cloned())
                 .collect();
         }
@@ -247,7 +253,8 @@ impl IndexRegistry {
     /// Get all aliases for a specific index.
     pub fn get_aliases_for_index(&self, index: &str) -> Vec<String> {
         let aliases = self.aliases.read();
-        aliases.iter()
+        aliases
+            .iter()
             .filter(|(_, indices)| indices.contains(&index.to_string()))
             .map(|(alias, _)| alias.clone())
             .collect()
@@ -383,7 +390,9 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 
 fn validate_index_name(name: &str) -> Result<(), EsError> {
     if name.is_empty() {
-        return Err(EsError::InvalidIndexName("index name cannot be empty".to_string()));
+        return Err(EsError::InvalidIndexName(
+            "index name cannot be empty".to_string(),
+        ));
     }
     if name.starts_with('_') || name.starts_with('-') || name.starts_with('+') {
         return Err(EsError::InvalidIndexName(format!(

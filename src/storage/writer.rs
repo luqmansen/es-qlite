@@ -90,7 +90,10 @@ pub async fn index_document(
                             let v = value.as_bool().unwrap_or(false) as i64;
                             extra_vals.push(Box::new(v));
                         }
-                        FieldType::Long | FieldType::Integer | FieldType::Short | FieldType::Byte => {
+                        FieldType::Long
+                        | FieldType::Integer
+                        | FieldType::Short
+                        | FieldType::Byte => {
                             let v = value.as_i64().unwrap_or(0);
                             extra_vals.push(Box::new(v));
                         }
@@ -149,8 +152,10 @@ pub async fn index_document(
             ];
             params.extend(extra_vals);
 
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+                .iter()
+                .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                .collect();
             conn.execute(&sql, param_refs.as_slice())?;
 
             Ok(WriteResult {
@@ -188,7 +193,10 @@ pub async fn delete_document(handle: &Arc<IndexHandle>, id: &str) -> Result<Writ
 
             match existing {
                 Some((version, seq_no)) => {
-                    conn.execute("DELETE FROM _source WHERE _id = ?1", rusqlite::params![&id_owned])?;
+                    conn.execute(
+                        "DELETE FROM _source WHERE _id = ?1",
+                        rusqlite::params![&id_owned],
+                    )?;
                     Ok(Some(WriteResult {
                         id: id_owned,
                         version: version + 1,
@@ -236,8 +244,8 @@ pub async fn update_document(
         })
         .await?;
 
-    let existing_source = existing_source
-        .ok_or_else(|| EsError::DocumentNotFound(id.clone(), index_name))?;
+    let existing_source =
+        existing_source.ok_or_else(|| EsError::DocumentNotFound(id.clone(), index_name))?;
 
     let mut merged: serde_json::Value = serde_json::from_str(&existing_source)?;
     if let (serde_json::Value::Object(ref mut base), serde_json::Value::Object(updates)) =

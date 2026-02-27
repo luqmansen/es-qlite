@@ -15,8 +15,8 @@ use opensearch::{
         transport::{SingleNodeConnectionPool, TransportBuilder},
     },
     indices::{IndicesCreateParts, IndicesDeleteParts, IndicesExistsParts, IndicesRefreshParts},
-    BulkParts, CountParts, DeleteParts, GetParts, IndexParts, MgetParts, OpenSearch,
-    SearchParts, UpdateParts,
+    BulkParts, CountParts, DeleteParts, GetParts, IndexParts, MgetParts, OpenSearch, SearchParts,
+    UpdateParts,
 };
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -68,7 +68,11 @@ async fn test_create_and_delete_index() {
         .await
         .expect("create index failed");
 
-    assert!(resp.status_code().is_success(), "create index returned {}", resp.status_code());
+    assert!(
+        resp.status_code().is_success(),
+        "create index returned {}",
+        resp.status_code()
+    );
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["acknowledged"], true);
     assert_eq!(body["index"], idx);
@@ -264,9 +268,24 @@ async fn test_search_match_query() {
         .unwrap();
 
     // Index multiple documents
-    client.index(IndexParts::IndexId(idx, "1")).body(json!({"title": "rust programming language", "price": 29.99})).send().await.unwrap();
-    client.index(IndexParts::IndexId(idx, "2")).body(json!({"title": "python programming guide", "price": 19.99})).send().await.unwrap();
-    client.index(IndexParts::IndexId(idx, "3")).body(json!({"title": "rust cookbook recipes", "price": 39.99})).send().await.unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "1"))
+        .body(json!({"title": "rust programming language", "price": 29.99}))
+        .send()
+        .await
+        .unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "2"))
+        .body(json!({"title": "python programming guide", "price": 19.99}))
+        .send()
+        .await
+        .unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "3"))
+        .body(json!({"title": "rust cookbook recipes", "price": 39.99}))
+        .send()
+        .await
+        .unwrap();
 
     // Refresh to make searchable
     client
@@ -342,7 +361,10 @@ async fn test_search_match_query() {
 
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["hits"]["total"]["value"], 1);
-    assert_eq!(body["hits"]["hits"][0]["_source"]["title"], "rust cookbook recipes");
+    assert_eq!(
+        body["hits"]["hits"][0]["_source"]["title"],
+        "rust cookbook recipes"
+    );
 
     cleanup(&client, &[idx]).await;
 }
@@ -372,7 +394,12 @@ async fn test_search_pagination() {
             .unwrap();
     }
 
-    client.indices().refresh(IndicesRefreshParts::Index(&[idx])).send().await.unwrap();
+    client
+        .indices()
+        .refresh(IndicesRefreshParts::Index(&[idx]))
+        .send()
+        .await
+        .unwrap();
 
     // Page 1: from=0, size=2
     let resp = client
@@ -420,11 +447,31 @@ async fn test_count() {
         .await
         .unwrap();
 
-    client.index(IndexParts::IndexId(idx, "1")).body(json!({"title": "foo"})).send().await.unwrap();
-    client.index(IndexParts::IndexId(idx, "2")).body(json!({"title": "bar"})).send().await.unwrap();
-    client.index(IndexParts::IndexId(idx, "3")).body(json!({"title": "foo bar"})).send().await.unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "1"))
+        .body(json!({"title": "foo"}))
+        .send()
+        .await
+        .unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "2"))
+        .body(json!({"title": "bar"}))
+        .send()
+        .await
+        .unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "3"))
+        .body(json!({"title": "foo bar"}))
+        .send()
+        .await
+        .unwrap();
 
-    client.indices().refresh(IndicesRefreshParts::Index(&[idx])).send().await.unwrap();
+    client
+        .indices()
+        .refresh(IndicesRefreshParts::Index(&[idx]))
+        .send()
+        .await
+        .unwrap();
 
     // Count all
     let resp = client
@@ -490,7 +537,12 @@ async fn test_bulk_operations() {
     assert_eq!(body["items"].as_array().unwrap().len(), 3);
 
     // Verify documents exist
-    client.indices().refresh(IndicesRefreshParts::Index(&[idx])).send().await.unwrap();
+    client
+        .indices()
+        .refresh(IndicesRefreshParts::Index(&[idx]))
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .count(CountParts::Index(&[idx]))
@@ -521,8 +573,18 @@ async fn test_mget() {
         .await
         .unwrap();
 
-    client.index(IndexParts::IndexId(idx, "1")).body(json!({"title": "one"})).send().await.unwrap();
-    client.index(IndexParts::IndexId(idx, "2")).body(json!({"title": "two"})).send().await.unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "1"))
+        .body(json!({"title": "one"}))
+        .send()
+        .await
+        .unwrap();
+    client
+        .index(IndexParts::IndexId(idx, "2"))
+        .body(json!({"title": "two"}))
+        .send()
+        .await
+        .unwrap();
 
     // Multi-get with index in path
     let resp = client
@@ -615,7 +677,11 @@ async fn test_dynamic_mapping() {
         .unwrap();
 
     // Retrieve it back
-    let resp = client.get(GetParts::IndexId(idx, "1")).send().await.unwrap();
+    let resp = client
+        .get(GetParts::IndexId(idx, "1"))
+        .send()
+        .await
+        .unwrap();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["found"], true);
     assert_eq!(body["_source"]["name"], "test item");
@@ -685,7 +751,12 @@ async fn create_index_raw(base: &str, index: &str, mappings: Value) {
         .send()
         .await
         .expect("create index");
-    assert!(resp.status().is_success(), "Failed to create index {}: {}", index, resp.status());
+    assert!(
+        resp.status().is_success(),
+        "Failed to create index {}: {}",
+        index,
+        resp.status()
+    );
 }
 
 /// Helper: index a document via raw HTTP.
@@ -697,7 +768,13 @@ async fn index_doc(base: &str, index: &str, id: &str, doc: Value) {
         .send()
         .await
         .expect("index doc");
-    assert!(resp.status().is_success(), "Failed to index doc {}/{}: {}", index, id, resp.status());
+    assert!(
+        resp.status().is_success(),
+        "Failed to index doc {}/{}: {}",
+        index,
+        id,
+        resp.status()
+    );
 }
 
 /// Helper: refresh an index via raw HTTP.
@@ -719,7 +796,12 @@ async fn search_raw(base: &str, index: &str, body: Value) -> Value {
         .send()
         .await
         .expect("search");
-    assert!(resp.status().is_success(), "Search failed on {}: {}", index, resp.status());
+    assert!(
+        resp.status().is_success(),
+        "Search failed on {}: {}",
+        index,
+        resp.status()
+    );
     resp.json().await.expect("parse search response")
 }
 
@@ -732,7 +814,12 @@ async fn search_with_params(base: &str, index: &str, params: &str, body: Value) 
         .send()
         .await
         .expect("search with params");
-    assert!(resp.status().is_success(), "Search failed on {}: {}", index, resp.status());
+    assert!(
+        resp.status().is_success(),
+        "Search failed on {}: {}",
+        index,
+        resp.status()
+    );
     resp.json().await.expect("parse search response")
 }
 
@@ -752,29 +839,69 @@ async fn test_terms_aggregation_basic() {
     let idx = "test-agg-basic";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "category": { "type": "keyword" },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "category": { "type": "keyword" },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "doc one", "category": "books", "status": "active"})).await;
-    index_doc(base, idx, "2", json!({"title": "doc two", "category": "books", "status": "active"})).await;
-    index_doc(base, idx, "3", json!({"title": "doc three", "category": "electronics", "status": "active"})).await;
-    index_doc(base, idx, "4", json!({"title": "doc four", "category": "electronics", "status": "inactive"})).await;
-    index_doc(base, idx, "5", json!({"title": "doc five", "category": "clothing", "status": "inactive"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "doc one", "category": "books", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "doc two", "category": "books", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "doc three", "category": "electronics", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "4",
+        json!({"title": "doc four", "category": "electronics", "status": "inactive"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "5",
+        json!({"title": "doc five", "category": "clothing", "status": "inactive"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggs": {
-            "categories": {
-                "terms": { "field": "category", "size": 10 }
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggs": {
+                "categories": {
+                    "terms": { "field": "category", "size": 10 }
+                }
             }
-        }
-    })).await;
+        }),
+    )
+    .await;
 
     assert_eq!(body["hits"]["total"]["value"], 5);
     let aggs = &body["aggregations"]["categories"];
@@ -784,13 +911,25 @@ async fn test_terms_aggregation_basic() {
 
     let first_count = buckets[0]["doc_count"].as_u64().unwrap();
     let last_count = buckets[buckets.len() - 1]["doc_count"].as_u64().unwrap();
-    assert!(first_count >= last_count, "Buckets should be sorted by doc_count desc");
+    assert!(
+        first_count >= last_count,
+        "Buckets should be sorted by doc_count desc"
+    );
 
-    let books_bucket = buckets.iter().find(|b| b["key"] == "books").expect("books bucket");
+    let books_bucket = buckets
+        .iter()
+        .find(|b| b["key"] == "books")
+        .expect("books bucket");
     assert_eq!(books_bucket["doc_count"], 2);
-    let electronics_bucket = buckets.iter().find(|b| b["key"] == "electronics").expect("electronics bucket");
+    let electronics_bucket = buckets
+        .iter()
+        .find(|b| b["key"] == "electronics")
+        .expect("electronics bucket");
     assert_eq!(electronics_bucket["doc_count"], 2);
-    let clothing_bucket = buckets.iter().find(|b| b["key"] == "clothing").expect("clothing bucket");
+    let clothing_bucket = buckets
+        .iter()
+        .find(|b| b["key"] == "clothing")
+        .expect("clothing bucket");
     assert_eq!(clothing_bucket["doc_count"], 1);
 
     cleanup_raw(base, &[idx]).await;
@@ -802,33 +941,65 @@ async fn test_terms_aggregation_multiple() {
     let idx = "test-agg-multi";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "category": { "type": "keyword" },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "category": { "type": "keyword" },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "a", "category": "books", "status": "active"})).await;
-    index_doc(base, idx, "2", json!({"title": "b", "category": "books", "status": "inactive"})).await;
-    index_doc(base, idx, "3", json!({"title": "c", "category": "toys", "status": "active"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "a", "category": "books", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "b", "category": "books", "status": "inactive"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "c", "category": "toys", "status": "active"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggs": {
-            "by_category": {
-                "terms": { "field": "category" }
-            },
-            "by_status": {
-                "terms": { "field": "status" }
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggs": {
+                "by_category": {
+                    "terms": { "field": "category" }
+                },
+                "by_status": {
+                    "terms": { "field": "status" }
+                }
             }
-        }
-    })).await;
+        }),
+    )
+    .await;
 
-    let cat_buckets = body["aggregations"]["by_category"]["buckets"].as_array().unwrap();
-    let status_buckets = body["aggregations"]["by_status"]["buckets"].as_array().unwrap();
+    let cat_buckets = body["aggregations"]["by_category"]["buckets"]
+        .as_array()
+        .unwrap();
+    let status_buckets = body["aggregations"]["by_status"]["buckets"]
+        .as_array()
+        .unwrap();
 
     assert_eq!(cat_buckets.len(), 2);
     assert_eq!(status_buckets.len(), 2);
@@ -842,33 +1013,63 @@ async fn test_terms_aggregation_with_query_filter() {
     let idx = "test-agg-filtered";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "category": { "type": "keyword" },
-            "price": { "type": "float" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "category": { "type": "keyword" },
+                "price": { "type": "float" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "cheap book", "category": "books", "price": 5.0})).await;
-    index_doc(base, idx, "2", json!({"title": "expensive book", "category": "books", "price": 50.0})).await;
-    index_doc(base, idx, "3", json!({"title": "cheap toy", "category": "toys", "price": 3.0})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "cheap book", "category": "books", "price": 5.0}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "expensive book", "category": "books", "price": 50.0}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "cheap toy", "category": "toys", "price": 3.0}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "query": {
-            "range": { "price": { "lt": 10.0 } }
-        },
-        "aggs": {
-            "categories": {
-                "terms": { "field": "category" }
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "query": {
+                "range": { "price": { "lt": 10.0 } }
+            },
+            "aggs": {
+                "categories": {
+                    "terms": { "field": "category" }
+                }
             }
-        }
-    })).await;
+        }),
+    )
+    .await;
 
     assert_eq!(body["hits"]["total"]["value"], 2);
-    let buckets = body["aggregations"]["categories"]["buckets"].as_array().unwrap();
+    let buckets = body["aggregations"]["categories"]["buckets"]
+        .as_array()
+        .unwrap();
     assert_eq!(buckets.len(), 2);
 
     cleanup_raw(base, &[idx]).await;
@@ -882,34 +1083,58 @@ async fn test_typed_keys() {
     let idx = "test-typed-keys";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
     index_doc(base, idx, "1", json!({"status": "active"})).await;
     index_doc(base, idx, "2", json!({"status": "inactive"})).await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggs": {
-            "statuses": { "terms": { "field": "status" } }
-        }
-    })).await;
-    assert!(body["aggregations"]["statuses"].is_object(), "Expected plain agg name");
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggs": {
+                "statuses": { "terms": { "field": "status" } }
+            }
+        }),
+    )
+    .await;
+    assert!(
+        body["aggregations"]["statuses"].is_object(),
+        "Expected plain agg name"
+    );
 
-    let body = search_with_params(base, idx, "typed_keys=true", json!({
-        "size": 0,
-        "aggs": {
-            "statuses": { "terms": { "field": "status" } }
-        }
-    })).await;
-    assert!(body["aggregations"]["sterms#statuses"].is_object(),
-        "Expected 'sterms#statuses' key, got: {:?}", body["aggregations"]);
-    assert!(body["aggregations"]["statuses"].is_null(),
-        "Plain name should not exist with typed_keys=true");
+    let body = search_with_params(
+        base,
+        idx,
+        "typed_keys=true",
+        json!({
+            "size": 0,
+            "aggs": {
+                "statuses": { "terms": { "field": "status" } }
+            }
+        }),
+    )
+    .await;
+    assert!(
+        body["aggregations"]["sterms#statuses"].is_object(),
+        "Expected 'sterms#statuses' key, got: {:?}",
+        body["aggregations"]
+    );
+    assert!(
+        body["aggregations"]["statuses"].is_null(),
+        "Plain name should not exist with typed_keys=true"
+    );
 
     cleanup_raw(base, &[idx]).await;
 }
@@ -922,21 +1147,31 @@ async fn test_aggregations_keyword_alias() {
     let idx = "test-agg-alias";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "category": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "category": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
     index_doc(base, idx, "1", json!({"category": "A"})).await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggregations": {
-            "cats": { "terms": { "field": "category" } }
-        }
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggregations": {
+                "cats": { "terms": { "field": "category" } }
+            }
+        }),
+    )
+    .await;
 
     let buckets = body["aggregations"]["cats"]["buckets"].as_array().unwrap();
     assert_eq!(buckets.len(), 1);
@@ -952,7 +1187,10 @@ async fn test_aggregations_empty_index_returns_empty_buckets() {
     let base = base_url().await;
     let client = http();
     let resp = client
-        .post(format!("{}/nonexistent-index-pattern*/_search?typed_keys=true", base))
+        .post(format!(
+            "{}/nonexistent-index-pattern*/_search?typed_keys=true",
+            base
+        ))
         .json(&json!({
             "size": 0,
             "aggs": {
@@ -966,9 +1204,18 @@ async fn test_aggregations_empty_index_returns_empty_buckets() {
     assert!(resp.status().is_success());
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["hits"]["total"]["value"], 0);
-    assert!(body["aggregations"]["sterms#myagg"]["buckets"].is_array(),
-        "Expected empty buckets array, got: {:?}", body["aggregations"]);
-    assert_eq!(body["aggregations"]["sterms#myagg"]["buckets"].as_array().unwrap().len(), 0);
+    assert!(
+        body["aggregations"]["sterms#myagg"]["buckets"].is_array(),
+        "Expected empty buckets array, got: {:?}",
+        body["aggregations"]
+    );
+    assert_eq!(
+        body["aggregations"]["sterms#myagg"]["buckets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 // ─── Index Aliases ──────────────────────────────────────────────────────────
@@ -980,15 +1227,32 @@ async fn test_alias_create_and_search() {
     let alias = "test-alias-name";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "category": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "category": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "hello world", "category": "greetings"})).await;
-    index_doc(base, idx, "2", json!({"title": "goodbye world", "category": "farewells"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "hello world", "category": "greetings"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "goodbye world", "category": "farewells"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
     let client = http();
@@ -1007,9 +1271,14 @@ async fn test_alias_create_and_search() {
     let body = search_raw(base, alias, json!({"query": {"match_all": {}}})).await;
     assert_eq!(body["hits"]["total"]["value"], 2);
 
-    let body = search_raw(base, alias, json!({
-        "query": { "match": { "title": "hello" } }
-    })).await;
+    let body = search_raw(
+        base,
+        alias,
+        json!({
+            "query": { "match": { "title": "hello" } }
+        }),
+    )
+    .await;
     assert_eq!(body["hits"]["total"]["value"], 1);
 
     let resp = client
@@ -1018,8 +1287,11 @@ async fn test_alias_create_and_search() {
         .await
         .expect("get aliases");
     let body: Value = resp.json().await.unwrap();
-    assert!(body[idx]["aliases"][alias].is_object(),
-        "Expected alias in response: {:?}", body);
+    assert!(
+        body[idx]["aliases"][alias].is_object(),
+        "Expected alias in response: {:?}",
+        body
+    );
 
     let resp = client
         .post(format!("{}/_aliases", base))
@@ -1041,8 +1313,10 @@ async fn test_alias_create_and_search() {
         .expect("search removed alias");
     if resp.status().is_success() {
         let body: Value = resp.json().await.unwrap();
-        assert_eq!(body["hits"]["total"]["value"], 0,
-            "After alias removal, search should return 0 results");
+        assert_eq!(
+            body["hits"]["total"]["value"], 0,
+            "After alias removal, search should return 0 results"
+        );
     } else {
         assert_eq!(resp.status().as_u16(), 404);
     }
@@ -1058,18 +1332,28 @@ async fn test_alias_multiple_indices() {
     let alias = "test-multi-alias-all";
     cleanup_raw(base, &[idx1, idx2]).await;
 
-    create_index_raw(base, idx1, json!({
-        "properties": {
-            "name": { "type": "text" },
-            "type": { "type": "keyword" }
-        }
-    })).await;
-    create_index_raw(base, idx2, json!({
-        "properties": {
-            "name": { "type": "text" },
-            "type": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx1,
+        json!({
+            "properties": {
+                "name": { "type": "text" },
+                "type": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
+    create_index_raw(
+        base,
+        idx2,
+        json!({
+            "properties": {
+                "name": { "type": "text" },
+                "type": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
     index_doc(base, idx1, "1", json!({"name": "alpha", "type": "first"})).await;
     index_doc(base, idx2, "2", json!({"name": "beta", "type": "second"})).await;
@@ -1092,12 +1376,17 @@ async fn test_alias_multiple_indices() {
     let body = search_raw(base, alias, json!({"query": {"match_all": {}}})).await;
     assert_eq!(body["hits"]["total"]["value"], 2);
 
-    let body = search_raw(base, alias, json!({
-        "size": 0,
-        "aggs": {
-            "types": { "terms": { "field": "type" } }
-        }
-    })).await;
+    let body = search_raw(
+        base,
+        alias,
+        json!({
+            "size": 0,
+            "aggs": {
+                "types": { "terms": { "field": "type" } }
+            }
+        }),
+    )
+    .await;
     let buckets = body["aggregations"]["types"]["buckets"].as_array().unwrap();
     assert_eq!(buckets.len(), 2);
 
@@ -1112,23 +1401,33 @@ async fn test_sort_by_field() {
     let idx = "test-sort";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "name": { "type": "keyword" },
-            "price": { "type": "float" },
-            "created_at": { "type": "date" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "name": { "type": "keyword" },
+                "price": { "type": "float" },
+                "created_at": { "type": "date" }
+            }
+        }),
+    )
+    .await;
 
     index_doc(base, idx, "1", json!({"name": "C-item", "price": 30.0})).await;
     index_doc(base, idx, "2", json!({"name": "A-item", "price": 10.0})).await;
     index_doc(base, idx, "3", json!({"name": "B-item", "price": 20.0})).await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "query": { "match_all": {} },
-        "sort": [{ "price": { "order": "asc" } }]
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": { "match_all": {} },
+            "sort": [{ "price": { "order": "asc" } }]
+        }),
+    )
+    .await;
 
     let hits = body["hits"]["hits"].as_array().unwrap();
     assert_eq!(hits.len(), 3);
@@ -1136,10 +1435,15 @@ async fn test_sort_by_field() {
     assert_eq!(hits[1]["_source"]["name"], "B-item");
     assert_eq!(hits[2]["_source"]["name"], "C-item");
 
-    let body = search_raw(base, idx, json!({
-        "query": { "match_all": {} },
-        "sort": [{ "price": { "order": "desc" } }]
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": { "match_all": {} },
+            "sort": [{ "price": { "order": "desc" } }]
+        }),
+    )
+    .await;
 
     let hits = body["hits"]["hits"].as_array().unwrap();
     assert_eq!(hits[0]["_source"]["name"], "C-item");
@@ -1157,21 +1461,48 @@ async fn test_multi_index_search() {
     let idx2 = "test-multi-search-2";
     cleanup_raw(base, &[idx1, idx2]).await;
 
-    create_index_raw(base, idx1, json!({
-        "properties": { "title": { "type": "text" }, "source": { "type": "keyword" } }
-    })).await;
-    create_index_raw(base, idx2, json!({
-        "properties": { "title": { "type": "text" }, "source": { "type": "keyword" } }
-    })).await;
+    create_index_raw(
+        base,
+        idx1,
+        json!({
+            "properties": { "title": { "type": "text" }, "source": { "type": "keyword" } }
+        }),
+    )
+    .await;
+    create_index_raw(
+        base,
+        idx2,
+        json!({
+            "properties": { "title": { "type": "text" }, "source": { "type": "keyword" } }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx1, "1", json!({"title": "rust programming", "source": "idx1"})).await;
-    index_doc(base, idx2, "2", json!({"title": "rust cookbook", "source": "idx2"})).await;
+    index_doc(
+        base,
+        idx1,
+        "1",
+        json!({"title": "rust programming", "source": "idx1"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx2,
+        "2",
+        json!({"title": "rust cookbook", "source": "idx2"}),
+    )
+    .await;
     refresh_raw(base, idx1).await;
     refresh_raw(base, idx2).await;
 
-    let body = search_raw(base, &format!("{},{}", idx1, idx2), json!({
-        "query": { "match": { "title": "rust" } }
-    })).await;
+    let body = search_raw(
+        base,
+        &format!("{},{}", idx1, idx2),
+        json!({
+            "query": { "match": { "title": "rust" } }
+        }),
+    )
+    .await;
 
     assert_eq!(body["hits"]["total"]["value"], 2);
     let hits = body["hits"]["hits"].as_array().unwrap();
@@ -1189,12 +1520,22 @@ async fn test_wildcard_index_search() {
     let idx2 = "test-wild-bbb";
     cleanup_raw(base, &[idx1, idx2]).await;
 
-    create_index_raw(base, idx1, json!({
-        "properties": { "val": { "type": "keyword" } }
-    })).await;
-    create_index_raw(base, idx2, json!({
-        "properties": { "val": { "type": "keyword" } }
-    })).await;
+    create_index_raw(
+        base,
+        idx1,
+        json!({
+            "properties": { "val": { "type": "keyword" } }
+        }),
+    )
+    .await;
+    create_index_raw(
+        base,
+        idx2,
+        json!({
+            "properties": { "val": { "type": "keyword" } }
+        }),
+    )
+    .await;
 
     index_doc(base, idx1, "1", json!({"val": "from-aaa"})).await;
     index_doc(base, idx2, "2", json!({"val": "from-bbb"})).await;
@@ -1215,16 +1556,39 @@ async fn test_delete_by_query() {
     let idx = "test-delete-by-query";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "keep me", "status": "active"})).await;
-    index_doc(base, idx, "2", json!({"title": "delete me", "status": "inactive"})).await;
-    index_doc(base, idx, "3", json!({"title": "delete me too", "status": "inactive"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "keep me", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "delete me", "status": "inactive"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "delete me too", "status": "inactive"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
     let client = http();
@@ -1260,48 +1624,90 @@ async fn test_search_underscore_terms() {
     let idx = "test-underscore-search";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "name": { "type": "text" },
-            "description": { "type": "text" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "name": { "type": "text" },
+                "description": { "type": "text" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({
-        "name": "act_hi_entitylink",
-        "description": "Historical entity link table"
-    })).await;
-    index_doc(base, idx, "2", json!({
-        "name": "act_hi_taskinst",
-        "description": "Historical task instance table"
-    })).await;
-    index_doc(base, idx, "3", json!({
-        "name": "user_profile",
-        "description": "User profiles"
-    })).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({
+            "name": "act_hi_entitylink",
+            "description": "Historical entity link table"
+        }),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({
+            "name": "act_hi_taskinst",
+            "description": "Historical task instance table"
+        }),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({
+            "name": "user_profile",
+            "description": "User profiles"
+        }),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "query": { "match": { "name": "act_hi_entitylin" } }
-    })).await;
-    assert!(body["hits"]["total"]["value"].as_u64().unwrap() >= 1,
-        "Should find act_hi_entitylink with partial search 'act_hi_entitylin'");
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": { "match": { "name": "act_hi_entitylin" } }
+        }),
+    )
+    .await;
+    assert!(
+        body["hits"]["total"]["value"].as_u64().unwrap() >= 1,
+        "Should find act_hi_entitylink with partial search 'act_hi_entitylin'"
+    );
 
-    let body = search_raw(base, idx, json!({
-        "query": { "match": { "name": "act_hi_taskinst" } }
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": { "match": { "name": "act_hi_taskinst" } }
+        }),
+    )
+    .await;
     assert_eq!(body["hits"]["total"]["value"], 1);
 
-    let body = search_raw(base, idx, json!({
-        "query": {
-            "multi_match": {
-                "query": "act_hi",
-                "fields": ["name", "description"]
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": {
+                "multi_match": {
+                    "query": "act_hi",
+                    "fields": ["name", "description"]
+                }
             }
-        }
-    })).await;
-    assert!(body["hits"]["total"]["value"].as_u64().unwrap() >= 2,
-        "Should find multiple act_hi_* tables");
+        }),
+    )
+    .await;
+    assert!(
+        body["hits"]["total"]["value"].as_u64().unwrap() >= 2,
+        "Should find multiple act_hi_* tables"
+    );
 
     cleanup_raw(base, &[idx]).await;
 }
@@ -1314,34 +1720,61 @@ async fn test_keyword_subfield_stripping() {
     let idx = "test-keyword-strip";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "name": {
-                "type": "text",
-                "fields": { "keyword": { "type": "keyword" } }
-            },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "name": {
+                    "type": "text",
+                    "fields": { "keyword": { "type": "keyword" } }
+                },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"name": "hello_world", "status": "active"})).await;
-    index_doc(base, idx, "2", json!({"name": "goodbye_world", "status": "inactive"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"name": "hello_world", "status": "active"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"name": "goodbye_world", "status": "inactive"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "query": {
-            "term": { "name.keyword": "hello_world" }
-        }
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": {
+                "term": { "name.keyword": "hello_world" }
+            }
+        }),
+    )
+    .await;
     assert_eq!(body["hits"]["total"]["value"], 1);
     assert_eq!(body["hits"]["hits"][0]["_source"]["name"], "hello_world");
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggs": {
-            "names": { "terms": { "field": "name.keyword" } }
-        }
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggs": {
+                "names": { "terms": { "field": "name.keyword" } }
+            }
+        }),
+    )
+    .await;
     let buckets = body["aggregations"]["names"]["buckets"].as_array().unwrap();
     assert_eq!(buckets.len(), 2);
 
@@ -1356,39 +1789,69 @@ async fn test_bool_should_mixed_fts_and_term() {
     let idx = "test-bool-should-mix";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "name": { "type": "keyword" },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "name": { "type": "keyword" },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "rust programming", "name": "rust-book", "status": "published"})).await;
-    index_doc(base, idx, "2", json!({"title": "python guide", "name": "python-book", "status": "published"})).await;
-    index_doc(base, idx, "3", json!({"title": "cooking recipes", "name": "cookbook", "status": "draft"})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "rust programming", "name": "rust-book", "status": "published"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "python guide", "name": "python-book", "status": "published"}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "cooking recipes", "name": "cookbook", "status": "draft"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "query": {
-            "bool": {
-                "should": [
-                    {
-                        "multi_match": {
-                            "query": "rust",
-                            "fields": ["title"]
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "query": {
+                "bool": {
+                    "should": [
+                        {
+                            "multi_match": {
+                                "query": "rust",
+                                "fields": ["title"]
+                            }
+                        },
+                        {
+                            "term": { "name": "rust-book" }
                         }
-                    },
-                    {
-                        "term": { "name": "rust-book" }
-                    }
-                ]
+                    ]
+                }
             }
-        }
-    })).await;
+        }),
+    )
+    .await;
 
-    assert!(body["hits"]["total"]["value"].as_u64().unwrap() >= 1,
-        "Should find at least 1 result for mixed should query");
+    assert!(
+        body["hits"]["total"]["value"].as_u64().unwrap() >= 1,
+        "Should find at least 1 result for mixed should query"
+    );
 
     cleanup_raw(base, &[idx]).await;
 }
@@ -1401,16 +1864,27 @@ async fn test_count_with_query() {
     let idx = "test-count-query";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "status": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "status": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
     index_doc(base, idx, "1", json!({"title": "one", "status": "active"})).await;
     index_doc(base, idx, "2", json!({"title": "two", "status": "active"})).await;
-    index_doc(base, idx, "3", json!({"title": "three", "status": "inactive"})).await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "three", "status": "inactive"}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
     let client = http();
@@ -1446,27 +1920,61 @@ async fn test_aggregation_on_array_field() {
     let idx = "test-agg-array";
     cleanup_raw(base, &[idx]).await;
 
-    create_index_raw(base, idx, json!({
-        "properties": {
-            "title": { "type": "text" },
-            "tags": { "type": "keyword" }
-        }
-    })).await;
+    create_index_raw(
+        base,
+        idx,
+        json!({
+            "properties": {
+                "title": { "type": "text" },
+                "tags": { "type": "keyword" }
+            }
+        }),
+    )
+    .await;
 
-    index_doc(base, idx, "1", json!({"title": "doc one", "tags": ["rust", "programming"]})).await;
-    index_doc(base, idx, "2", json!({"title": "doc two", "tags": ["rust", "web"]})).await;
-    index_doc(base, idx, "3", json!({"title": "doc three", "tags": ["python", "web"]})).await;
+    index_doc(
+        base,
+        idx,
+        "1",
+        json!({"title": "doc one", "tags": ["rust", "programming"]}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "2",
+        json!({"title": "doc two", "tags": ["rust", "web"]}),
+    )
+    .await;
+    index_doc(
+        base,
+        idx,
+        "3",
+        json!({"title": "doc three", "tags": ["python", "web"]}),
+    )
+    .await;
     refresh_raw(base, idx).await;
 
-    let body = search_raw(base, idx, json!({
-        "size": 0,
-        "aggs": {
-            "tag_counts": { "terms": { "field": "tags", "size": 10 } }
-        }
-    })).await;
+    let body = search_raw(
+        base,
+        idx,
+        json!({
+            "size": 0,
+            "aggs": {
+                "tag_counts": { "terms": { "field": "tags", "size": 10 } }
+            }
+        }),
+    )
+    .await;
 
-    let buckets = body["aggregations"]["tag_counts"]["buckets"].as_array().unwrap();
-    assert!(buckets.len() >= 3, "Expected at least 3 tag buckets, got {}", buckets.len());
+    let buckets = body["aggregations"]["tag_counts"]["buckets"]
+        .as_array()
+        .unwrap();
+    assert!(
+        buckets.len() >= 3,
+        "Expected at least 3 tag buckets, got {}",
+        buckets.len()
+    );
 
     let rust_bucket = buckets.iter().find(|b| b["key"] == "rust");
     assert!(rust_bucket.is_some(), "Expected 'rust' bucket");

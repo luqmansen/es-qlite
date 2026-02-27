@@ -14,7 +14,10 @@ pub struct DocRecord {
 }
 
 /// Get a single document by ID.
-pub async fn get_document(handle: &Arc<IndexHandle>, id: &str) -> Result<Option<DocRecord>, EsError> {
+pub async fn get_document(
+    handle: &Arc<IndexHandle>,
+    id: &str,
+) -> Result<Option<DocRecord>, EsError> {
     let id = id.to_string();
     let result = handle
         .conn
@@ -69,13 +72,15 @@ pub async fn search(
                     translated.has_fts = false;
                     if translated.where_clause.is_empty() && !translated.fts_match.is_empty() {
                         // Extract alphanumeric terms from FTS expression for a basic LIKE
-                        let terms: Vec<&str> = translated.fts_match
+                        let terms: Vec<&str> = translated
+                            .fts_match
                             .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                             .filter(|s| !s.is_empty() && s.len() > 1)
                             .filter(|s| !["AND", "OR", "NOT", "NEAR"].contains(s))
                             .collect();
                         if !terms.is_empty() {
-                            let conditions: Vec<String> = terms.iter()
+                            let conditions: Vec<String> = terms
+                                .iter()
                                 .map(|t| format!("_source LIKE '%{}%'", t.replace('\'', "''")))
                                 .collect();
                             translated.where_clause = conditions.join(" AND ");
@@ -85,7 +90,12 @@ pub async fn search(
                 }
             }
 
-            tracing::debug!("Translated query: fts={:?}, where={:?}, has_fts={}", translated.fts_match, translated.where_clause, translated.has_fts);
+            tracing::debug!(
+                "Translated query: fts={:?}, where={:?}, has_fts={}",
+                translated.fts_match,
+                translated.where_clause,
+                translated.has_fts
+            );
 
             // Build the full SQL query
             let (sql, count_sql, params) = build_search_sql(&translated, from, size);
@@ -94,8 +104,10 @@ pub async fn search(
             // Execute count query - with FTS error fallback
             let (total, use_fallback) = match conn.prepare(&count_sql) {
                 Ok(mut stmt) => {
-                    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                        params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+                    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+                        .iter()
+                        .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                        .collect();
                     match stmt.query_row(param_refs.as_slice(), |row| row.get::<_, i64>(0)) {
                         Ok(total) => (total, false),
                         Err(e) => {
@@ -113,17 +125,22 @@ pub async fn search(
             // If FTS failed (e.g., column not in FTS table), fall back to LIKE
             if use_fallback && translated.has_fts {
                 fts_to_like_fallback(&mut translated);
-                let (fallback_sql, fallback_count_sql, fallback_params) = build_search_sql(&translated, from, size);
+                let (fallback_sql, fallback_count_sql, fallback_params) =
+                    build_search_sql(&translated, from, size);
                 tracing::debug!("Fallback SQL: {}", fallback_sql);
                 let total: i64 = {
                     let mut stmt = conn.prepare(&fallback_count_sql)?;
-                    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                        fallback_params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+                    let param_refs: Vec<&dyn rusqlite::types::ToSql> = fallback_params
+                        .iter()
+                        .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                        .collect();
                     stmt.query_row(param_refs.as_slice(), |row| row.get(0))?
                 };
                 let mut stmt = conn.prepare(&fallback_sql)?;
-                let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                    fallback_params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+                let param_refs: Vec<&dyn rusqlite::types::ToSql> = fallback_params
+                    .iter()
+                    .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                    .collect();
                 let mut rows = stmt.query(param_refs.as_slice())?;
                 let mut hits = Vec::new();
                 let mut max_score: Option<f64> = None;
@@ -147,7 +164,10 @@ pub async fn search(
                     });
                 }
                 let envelope = HitsEnvelope {
-                    total: HitsTotal { value: total as u64, relation: "eq".to_string() },
+                    total: HitsTotal {
+                        value: total as u64,
+                        relation: "eq".to_string(),
+                    },
                     max_score,
                     hits,
                 };
@@ -156,8 +176,10 @@ pub async fn search(
 
             // Execute search query
             let mut stmt = conn.prepare(&sql)?;
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+                .iter()
+                .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                .collect();
             let mut rows = stmt.query(param_refs.as_slice())?;
 
             let mut hits = Vec::new();
@@ -186,13 +208,17 @@ pub async fn search(
                         // Extract the field path from the sort ref
                         let field_path = if sort_ref.starts_with("json_extract") {
                             // json_extract(_source, '$.field') -> extract field path
-                            sort_ref.split("'$.").nth(1)
+                            sort_ref
+                                .split("'$.")
+                                .nth(1)
                                 .and_then(|s| s.strip_suffix("')"))
                                 .unwrap_or("")
                         } else {
                             sort_ref.trim_matches('"')
                         };
-                        if let Some(v) = source.pointer(&format!("/{}", field_path.replace('.', "/"))) {
+                        if let Some(v) =
+                            source.pointer(&format!("/{}", field_path.replace('.', "/")))
+                        {
                             vals.push(v.clone());
                         } else {
                             vals.push(serde_json::Value::Null);
@@ -206,7 +232,11 @@ pub async fn search(
                 hits.push(Hit {
                     _index: index_name.clone(),
                     _id: id,
-                    _score: if translated.sort_clauses.is_empty() { Some(normalized_score) } else { None },
+                    _score: if translated.sort_clauses.is_empty() {
+                        Some(normalized_score)
+                    } else {
+                        None
+                    },
                     _source: source,
                     sort: sort_values,
                 });
@@ -247,13 +277,15 @@ pub async fn count(handle: &Arc<IndexHandle>, translated: TranslatedQuery) -> Re
                 if !fts_exists {
                     translated.has_fts = false;
                     if translated.where_clause.is_empty() && !translated.fts_match.is_empty() {
-                        let terms: Vec<&str> = translated.fts_match
+                        let terms: Vec<&str> = translated
+                            .fts_match
                             .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                             .filter(|s| !s.is_empty() && s.len() > 1)
                             .filter(|s| !["AND", "OR", "NOT", "NEAR"].contains(s))
                             .collect();
                         if !terms.is_empty() {
-                            let conditions: Vec<String> = terms.iter()
+                            let conditions: Vec<String> = terms
+                                .iter()
                                 .map(|t| format!("_source LIKE '%{}%'", t.replace('\'', "''")))
                                 .collect();
                             translated.where_clause = conditions.join(" AND ");
@@ -265,8 +297,10 @@ pub async fn count(handle: &Arc<IndexHandle>, translated: TranslatedQuery) -> Re
 
             let (_, count_sql, params) = build_search_sql(&translated, 0, 0);
             let mut stmt = conn.prepare(&count_sql)?;
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                params.iter().map(|p| p.as_ref() as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params
+                .iter()
+                .map(|p| p.as_ref() as &dyn rusqlite::types::ToSql)
+                .collect();
             let total: i64 = stmt.query_row(param_refs.as_slice(), |row| row.get(0))?;
             Ok(total as u64)
         })
@@ -299,13 +333,15 @@ pub async fn aggregate(
                 if !fts_exists {
                     translated.has_fts = false;
                     if translated.where_clause.is_empty() && !translated.fts_match.is_empty() {
-                        let terms: Vec<&str> = translated.fts_match
+                        let terms: Vec<&str> = translated
+                            .fts_match
                             .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
                             .filter(|s| !s.is_empty() && s.len() > 1)
                             .filter(|s| !["AND", "OR", "NOT", "NEAR"].contains(s))
                             .collect();
                         if !terms.is_empty() {
-                            let conditions: Vec<String> = terms.iter()
+                            let conditions: Vec<String> = terms
+                                .iter()
                                 .map(|t| format!("_source LIKE '%{}%'", t.replace('\'', "''")))
                                 .collect();
                             translated.where_clause = conditions.join(" AND ");
@@ -323,12 +359,15 @@ pub async fn aggregate(
                         let buckets = execute_terms_agg(conn, &translated, field, *size)?;
                         let total_count: u64 = buckets.iter().map(|b| b.doc_count).sum();
                         let shown_count: u64 = buckets.iter().map(|b| b.doc_count).sum();
-                        results.insert(agg_name.clone(), AggregationResult {
-                            doc_count_error_upper_bound: Some(0),
-                            sum_other_doc_count: Some((total_count - shown_count) as i64),
-                            buckets: Some(buckets),
-                            value: None,
-                        });
+                        results.insert(
+                            agg_name.clone(),
+                            AggregationResult {
+                                doc_count_error_upper_bound: Some(0),
+                                sum_other_doc_count: Some((total_count - shown_count) as i64),
+                                buckets: Some(buckets),
+                                value: None,
+                            },
+                        );
                     }
                 }
             }
@@ -351,15 +390,14 @@ pub fn parse_aggs(aggs_value: &serde_json::Value) -> HashMap<String, AggDef> {
     if let Some(obj) = aggs_value.as_object() {
         for (name, def) in obj {
             if let Some(terms_def) = def.get("terms").or_else(|| def.get("term")) {
-                let field = terms_def.get("field")
+                let field = terms_def
+                    .get("field")
                     .and_then(|f| f.as_str())
                     .unwrap_or("")
                     .to_string();
                 // Strip .keyword suffix
                 let field = field.strip_suffix(".keyword").unwrap_or(&field).to_string();
-                let size = terms_def.get("size")
-                    .and_then(|s| s.as_u64())
-                    .unwrap_or(10) as usize;
+                let size = terms_def.get("size").and_then(|s| s.as_u64()).unwrap_or(10) as usize;
                 if !field.is_empty() {
                     result.insert(name.clone(), AggDef::Terms { field, size });
                 }
@@ -400,7 +438,11 @@ fn execute_terms_agg(
         ("_source".to_string(), where_clause)
     };
 
-    let where_prefix = if base_where.is_empty() { "WHERE 1=1" } else { &base_where };
+    let where_prefix = if base_where.is_empty() {
+        "WHERE 1=1"
+    } else {
+        &base_where
+    };
 
     // Try simple GROUP BY first (works for scalar fields - most common case)
     let simple_sql = format!(
@@ -438,7 +480,10 @@ fn execute_terms_agg(
             rusqlite::types::Value::Real(f) => serde_json::json!(f),
             _ => continue,
         };
-        buckets.push(AggBucket { key: key_json, doc_count: count });
+        buckets.push(AggBucket {
+            key: key_json,
+            doc_count: count,
+        });
     }
     drop(rows);
     drop(stmt);
@@ -472,7 +517,10 @@ fn execute_terms_agg(
                 rusqlite::types::Value::Real(f) => serde_json::json!(f),
                 _ => continue,
             };
-            buckets.push(AggBucket { key: key_json, doc_count: count });
+            buckets.push(AggBucket {
+                key: key_json,
+                doc_count: count,
+            });
         }
     }
 
@@ -496,7 +544,8 @@ fn fts_to_like_fallback(translated: &mut TranslatedQuery) {
         if let Some(end) = cleaned[start..].find('}') {
             let after_brace = start + end + 1;
             // Skip optional ": " after the closing brace
-            let skip_to = cleaned[after_brace..].find(':')
+            let skip_to = cleaned[after_brace..]
+                .find(':')
                 .map(|i| after_brace + i + 1)
                 .unwrap_or(after_brace);
             cleaned = format!("{}{}", &cleaned[..start], &cleaned[skip_to..]);
@@ -513,7 +562,8 @@ fn fts_to_like_fallback(translated: &mut TranslatedQuery) {
     translated.has_fts = false;
     translated.fts_match.clear();
     if !terms.is_empty() {
-        let conditions: Vec<String> = terms.iter()
+        let conditions: Vec<String> = terms
+            .iter()
             .map(|t| format!("_source LIKE '%{}%'", t.replace('\'', "''")))
             .collect();
         let like_clause = conditions.join(" AND ");
@@ -534,7 +584,9 @@ fn build_search_sql(
 
     // Build ORDER BY clause from sort_clauses, falling back to default
     let order_by = if !translated.sort_clauses.is_empty() {
-        let clauses: Vec<String> = translated.sort_clauses.iter()
+        let clauses: Vec<String> = translated
+            .sort_clauses
+            .iter()
             .map(|(field, dir)| format!("{} {}", field, dir))
             .collect();
         format!("ORDER BY {}", clauses.join(", "))
@@ -591,10 +643,7 @@ fn build_search_sql(
             where_clause, order_by, size, from,
         );
 
-        let count_sql = format!(
-            "SELECT COUNT(*) FROM _source{}",
-            where_clause,
-        );
+        let count_sql = format!("SELECT COUNT(*) FROM _source{}", where_clause,);
 
         (sql, count_sql, params)
     }

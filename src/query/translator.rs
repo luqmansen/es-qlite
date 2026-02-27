@@ -62,7 +62,11 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
         Query::MatchAll => {
             // No filter needed
         }
-        Query::Match { field, query: q, operator } => {
+        Query::Match {
+            field,
+            query: q,
+            operator,
+        } => {
             // Strip sub-field suffixes like .keyword for mapping lookup
             let base_field = field.split('.').next().unwrap_or(field);
             let field_type = mapping
@@ -72,7 +76,8 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 .unwrap_or(&FieldType::Text);
 
             if field_type.is_text() && mapping.properties.contains_key(base_field) {
-                let terms: Vec<String> = q.split_whitespace()
+                let terms: Vec<String> = q
+                    .split_whitespace()
                     .map(|t| escape_fts(t))
                     .filter(|t| !t.is_empty())
                     .collect();
@@ -82,11 +87,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                         BoolOperator::And => " AND ",
                         BoolOperator::Or => " OR ",
                     };
-                    let fts_expr = format!(
-                        "{{{}}}: ({})",
-                        base_field,
-                        terms.join(joiner)
-                    );
+                    let fts_expr = format!("{{{}}}: ({})", base_field, terms.join(joiner));
                     append_fts(&mut result.fts_match, &fts_expr, "AND");
                 }
             } else if field_type.is_text() {
@@ -105,7 +106,8 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
             append_where(&mut result.where_clause, &where_expr, "AND");
         }
         Query::Terms { field, values } => {
-            let exprs: Vec<String> = values.iter()
+            let exprs: Vec<String> = values
+                .iter()
                 .map(|v| term_where_expr(field, v, mapping))
                 .collect();
             if !exprs.is_empty() {
@@ -113,7 +115,13 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 append_where(&mut result.where_clause, &where_expr, "AND");
             }
         }
-        Query::Range { field, gte, gt, lte, lt } => {
+        Query::Range {
+            field,
+            gte,
+            gt,
+            lte,
+            lt,
+        } => {
             let fref = field_ref(field, mapping);
             let mut conditions = Vec::new();
             if let Some(v) = gte {
@@ -133,7 +141,13 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 append_where(&mut result.where_clause, &where_expr, "AND");
             }
         }
-        Query::Bool { must, should, must_not, filter, minimum_should_match: _ } => {
+        Query::Bool {
+            must,
+            should,
+            must_not,
+            filter,
+            minimum_should_match: _,
+        } => {
             // Process must clauses (AND)
             for q in must {
                 translate_inner(q, mapping, result);
@@ -205,7 +219,9 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 }
             }
         }
-        Query::MultiMatch { query: q, fields, .. } => {
+        Query::MultiMatch {
+            query: q, fields, ..
+        } => {
             if fields.is_empty() {
                 return;
             }
@@ -225,7 +241,9 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
             let text_field_boosts: Vec<(&str, f64)> = field_boosts
                 .iter()
                 .filter(|(f, _)| {
-                    mapping.properties.get(*f)
+                    mapping
+                        .properties
+                        .get(*f)
                         .map(|m| m.field_type.is_text())
                         .unwrap_or(false)
                 })
@@ -236,14 +254,16 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
 
             let text_fields: Vec<&str> = text_field_boosts.iter().map(|(f, _)| *f).collect();
 
-            let terms: Vec<String> = q.split_whitespace()
+            let terms: Vec<String> = q
+                .split_whitespace()
                 .map(|t| escape_fts(t))
                 .filter(|t| !t.is_empty())
                 .collect();
 
             if text_fields.is_empty() || terms.is_empty() {
                 // Fall back to LIKE-based search on _source
-                let clean_query: String = q.chars()
+                let clean_query: String = q
+                    .chars()
                     .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '_' || *c == '-')
                     .collect();
                 if !clean_query.trim().is_empty() {
@@ -253,15 +273,13 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
             } else {
                 result.has_fts = true;
                 let col_filter = text_fields.join(" ");
-                let fts_expr = format!(
-                    "{{{}}}: ({})",
-                    col_filter,
-                    terms.join(" OR ")
-                );
+                let fts_expr = format!("{{{}}}: ({})", col_filter, terms.join(" OR "));
                 append_fts(&mut result.fts_match, &fts_expr, "AND");
 
                 // Compute BM25 weights from boost values
-                let has_boosts = text_field_boosts.iter().any(|(_, b)| (*b - 1.0).abs() > f64::EPSILON);
+                let has_boosts = text_field_boosts
+                    .iter()
+                    .any(|(_, b)| (*b - 1.0).abs() > f64::EPSILON);
                 if has_boosts {
                     result.bm25_weights = compute_bm25_weights(&text_field_boosts, mapping);
                 }
@@ -275,7 +293,11 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
         Query::MatchNone => {
             append_where(&mut result.where_clause, "0 = 1", "AND");
         }
-        Query::QueryString { query: q, fields, default_operator } => {
+        Query::QueryString {
+            query: q,
+            fields,
+            default_operator,
+        } => {
             // If query is just "*", treat as match_all
             if q == "*" || q.trim().is_empty() {
                 return;
@@ -296,7 +318,10 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
             }
 
             // Fallback: LIKE-based search for complex query_string syntax
-            let clean_query: String = q.chars().filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '_' || *c == '-').collect();
+            let clean_query: String = q
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '_' || *c == '-')
+                .collect();
             if clean_query.trim().is_empty() {
                 return;
             }
@@ -308,7 +333,13 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 let conditions: Vec<String> = fields
                     .iter()
                     .map(|f| strip_boost(f))
-                    .map(|f| format!("json_extract(_source, '$.{}') LIKE '%{}%'", f, escape_sql(&clean_query)))
+                    .map(|f| {
+                        format!(
+                            "json_extract(_source, '$.{}') LIKE '%{}%'",
+                            f,
+                            escape_sql(&clean_query)
+                        )
+                    })
                     .collect();
                 if !conditions.is_empty() {
                     let where_expr = format!("({})", conditions.join(" OR "));
@@ -378,10 +409,7 @@ fn parse_boost(field: &str) -> f64 {
 /// Compute BM25 weight arguments string from field boost values.
 /// FTS5 bm25() takes one weight per FTS column in the order they were defined.
 /// We map the boost values from the query fields to the FTS column positions.
-fn compute_bm25_weights(
-    field_boosts: &[(&str, f64)],
-    mapping: &IndexMapping,
-) -> String {
+fn compute_bm25_weights(field_boosts: &[(&str, f64)], mapping: &IndexMapping) -> String {
     // Get all text fields in the mapping (these are the FTS columns, in iteration order)
     let fts_columns: Vec<&String> = mapping
         .properties
@@ -446,7 +474,10 @@ fn term_where_expr(field: &str, value: &serde_json::Value, mapping: &IndexMappin
         let fref = field_ref(&field, mapping);
         return format!(
             "({} = {} OR EXISTS (SELECT 1 FROM json_each(_source, '$.{}') WHERE value = {}))",
-            fref, sql_value(value), field, sql_value(value)
+            fref,
+            sql_value(value),
+            field,
+            sql_value(value)
         );
     }
 
@@ -468,9 +499,10 @@ fn strip_keyword_suffix(field: &str) -> String {
 
 fn escape_fts(term: &str) -> String {
     // Strip everything except alphanumeric and basic characters
-    let cleaned: String = term.chars().filter(|c| {
-        c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '*'
-    }).collect();
+    let cleaned: String = term
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == '*')
+        .collect();
     if cleaned.is_empty() || cleaned == "-" {
         return String::new();
     }
@@ -488,9 +520,7 @@ fn escape_fts(term: &str) -> String {
         .collect();
     if parts.len() > 1 {
         // Multiple tokens: use NEAR/0 for adjacency (like phrase match) with prefix wildcards
-        let tokens: Vec<String> = parts.iter()
-            .map(|p| format!("\"{}\"*", p))
-            .collect();
+        let tokens: Vec<String> = parts.iter().map(|p| format!("\"{}\"*", p)).collect();
         return tokens.join(" ");
     }
     // Single token: quote it and add prefix wildcard for partial matching
@@ -517,7 +547,9 @@ fn try_parse_query_string_to_fts(
     // - regex (/)
     // - boost (^) on individual terms
     // - quoted phrases (handled separately — could be supported but skip for now)
-    let has_complex_syntax = query.chars().any(|c| matches!(c, ':' | '~' | '[' | ']' | '/' | '^' | '"'));
+    let has_complex_syntax = query
+        .chars()
+        .any(|c| matches!(c, ':' | '~' | '[' | ']' | '/' | '^' | '"'));
     if has_complex_syntax {
         return None;
     }
@@ -525,16 +557,21 @@ fn try_parse_query_string_to_fts(
     // Resolve text fields from the fields list or mapping
     let text_fields: Vec<String> = if fields.is_empty() {
         // No fields specified — use all text fields in mapping
-        mapping.properties.iter()
+        mapping
+            .properties
+            .iter()
             .filter(|(_, f)| f.field_type.is_text())
             .map(|(name, _)| name.clone())
             .collect()
     } else {
-        fields.iter()
+        fields
+            .iter()
             .map(|f| strip_boost(f).to_string())
             .map(|f| f.split('.').next().unwrap_or(&f).to_string())
             .filter(|f| {
-                mapping.properties.get(f.as_str())
+                mapping
+                    .properties
+                    .get(f.as_str())
                     .map(|m| m.field_type.is_text())
                     .unwrap_or(false)
             })

@@ -144,20 +144,23 @@ pub async fn get_all_aliases(State(registry): State<Arc<IndexRegistry>>) -> Resp
         for alias in &index_aliases {
             alias_map.insert(alias.clone(), serde_json::json!({}));
         }
-        result.insert(handle.name.clone(), serde_json::json!({ "aliases": alias_map }));
+        result.insert(
+            handle.name.clone(),
+            serde_json::json!({ "aliases": alias_map }),
+        );
     }
 
     let _ = all_aliases; // used above indirectly
     Json(serde_json::Value::Object(result)).into_response()
 }
 
-pub async fn post_aliases(
-    State(registry): State<Arc<IndexRegistry>>,
-    body: Bytes,
-) -> Response {
+pub async fn post_aliases(State(registry): State<Arc<IndexRegistry>>, body: Bytes) -> Response {
     // Parse {"actions": [{"add": {"index": "x", "alias": "y"}}, {"remove": ...}]}
     let body_str = String::from_utf8_lossy(&body);
-    tracing::debug!("POST /_aliases body: {}", &body_str[..body_str.len().min(500)]);
+    tracing::debug!(
+        "POST /_aliases body: {}",
+        &body_str[..body_str.len().min(500)]
+    );
     if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body) {
         if let Some(actions) = value.get("actions").and_then(|a| a.as_array()) {
             for action in actions {
@@ -166,7 +169,9 @@ pub async fn post_aliases(
                     let aliases = if let Some(alias) = add.get("alias").and_then(|v| v.as_str()) {
                         vec![alias.to_string()]
                     } else if let Some(arr) = add.get("aliases").and_then(|v| v.as_array()) {
-                        arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
                     } else {
                         vec![]
                     };
@@ -205,7 +210,10 @@ pub async fn get_alias(
         for alias in &index_aliases {
             alias_map.insert(alias.clone(), serde_json::json!({}));
         }
-        result.insert(handle.name.clone(), serde_json::json!({ "aliases": alias_map }));
+        result.insert(
+            handle.name.clone(),
+            serde_json::json!({ "aliases": alias_map }),
+        );
     }
     Json(serde_json::Value::Object(result)).into_response()
 }

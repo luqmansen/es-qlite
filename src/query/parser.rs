@@ -68,7 +68,10 @@ pub fn parse_query(value: &serde_json::Value) -> Result<Query, EsError> {
     }
 
     // For unsupported queries, return MatchAll rather than error
-    tracing::warn!("Unsupported query type treated as match_all: {:?}", obj.keys().collect::<Vec<_>>());
+    tracing::warn!(
+        "Unsupported query type treated as match_all: {:?}",
+        obj.keys().collect::<Vec<_>>()
+    );
     Ok(Query::MatchAll)
 }
 

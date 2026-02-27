@@ -32,7 +32,12 @@ async fn create_index_inner(
             Ok(r) => r,
             Err(e) => {
                 let body_str = String::from_utf8_lossy(&body);
-                tracing::error!("Failed to parse create index body for '{}': {} -- body: {}", index, e, &body_str[..body_str.len().min(500)]);
+                tracing::error!(
+                    "Failed to parse create index body for '{}': {} -- body: {}",
+                    index,
+                    e,
+                    &body_str[..body_str.len().min(500)]
+                );
                 return Err(EsError::ParsingError(e.to_string()));
             }
         }
@@ -110,20 +115,23 @@ pub async fn get_index(
         let mut result = serde_json::Map::new();
         for handle in &handles {
             let mapping = handle.mapping.read().clone();
-            result.insert(handle.name.clone(), serde_json::json!({
-                "aliases": {},
-                "mappings": mapping,
-                "settings": {
-                    "index": {
-                        "number_of_shards": "1",
-                        "number_of_replicas": "0",
-                        "provided_name": &handle.name,
-                        "creation_date": "0",
-                        "uuid": &handle.name,
-                        "version": { "created": "136327827" }
+            result.insert(
+                handle.name.clone(),
+                serde_json::json!({
+                    "aliases": {},
+                    "mappings": mapping,
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "number_of_replicas": "0",
+                            "provided_name": &handle.name,
+                            "creation_date": "0",
+                            "uuid": &handle.name,
+                            "version": { "created": "136327827" }
+                        }
                     }
-                }
-            }));
+                }),
+            );
         }
         return Json(serde_json::Value::Object(result)).into_response();
     }
@@ -132,20 +140,23 @@ pub async fn get_index(
         Ok(handle) => {
             let mapping = handle.mapping.read().clone();
             let mut result = serde_json::Map::new();
-            result.insert(index.clone(), serde_json::json!({
-                "aliases": {},
-                "mappings": mapping,
-                "settings": {
-                    "index": {
-                        "number_of_shards": "1",
-                        "number_of_replicas": "0",
-                        "provided_name": &index,
-                        "creation_date": "0",
-                        "uuid": &index,
-                        "version": { "created": "136327827" }
+            result.insert(
+                index.clone(),
+                serde_json::json!({
+                    "aliases": {},
+                    "mappings": mapping,
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "number_of_replicas": "0",
+                            "provided_name": &index,
+                            "creation_date": "0",
+                            "uuid": &index,
+                            "version": { "created": "136327827" }
+                        }
                     }
-                }
-            }));
+                }),
+            );
             Json(serde_json::Value::Object(result)).into_response()
         }
         Err(e) => e.into_response(),
@@ -159,18 +170,21 @@ pub async fn get_settings(
     match registry.get(&index) {
         Ok(_handle) => {
             let mut result = serde_json::Map::new();
-            result.insert(index.clone(), serde_json::json!({
-                "settings": {
-                    "index": {
-                        "number_of_shards": "1",
-                        "number_of_replicas": "0",
-                        "provided_name": &index,
-                        "creation_date": "0",
-                        "uuid": &index,
-                        "version": { "created": "136327827" }
+            result.insert(
+                index.clone(),
+                serde_json::json!({
+                    "settings": {
+                        "index": {
+                            "number_of_shards": "1",
+                            "number_of_replicas": "0",
+                            "provided_name": &index,
+                            "creation_date": "0",
+                            "uuid": &index,
+                            "version": { "created": "136327827" }
+                        }
                     }
-                }
-            }));
+                }),
+            );
             Json(serde_json::Value::Object(result)).into_response()
         }
         Err(e) => e.into_response(),
@@ -202,7 +216,10 @@ pub async fn get_aliases(
         for alias in &index_aliases {
             alias_map.insert(alias.clone(), serde_json::json!({}));
         }
-        result.insert(handle.name.clone(), serde_json::json!({ "aliases": alias_map }));
+        result.insert(
+            handle.name.clone(),
+            serde_json::json!({ "aliases": alias_map }),
+        );
     }
     Json(serde_json::Value::Object(result)).into_response()
 }

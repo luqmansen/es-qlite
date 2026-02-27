@@ -80,14 +80,30 @@ impl FieldType {
 
     pub fn sqlite_type(&self) -> &str {
         match self {
-            FieldType::Text | FieldType::Keyword | FieldType::Date | FieldType::Completion
-            | FieldType::SearchAsYouType | FieldType::ConstantKeyword | FieldType::Wildcard
+            FieldType::Text
+            | FieldType::Keyword
+            | FieldType::Date
+            | FieldType::Completion
+            | FieldType::SearchAsYouType
+            | FieldType::ConstantKeyword
+            | FieldType::Wildcard
             | FieldType::Ip => "TEXT",
-            FieldType::Long | FieldType::Integer | FieldType::Short | FieldType::Byte
-            | FieldType::Boolean | FieldType::RankFeature => "INTEGER",
-            FieldType::Float | FieldType::Double | FieldType::HalfFloat | FieldType::ScaledFloat => "REAL",
-            FieldType::Object | FieldType::Nested | FieldType::Flattened | FieldType::FlatObject
-            | FieldType::Join | FieldType::RankFeatures => "TEXT",
+            FieldType::Long
+            | FieldType::Integer
+            | FieldType::Short
+            | FieldType::Byte
+            | FieldType::Boolean
+            | FieldType::RankFeature => "INTEGER",
+            FieldType::Float
+            | FieldType::Double
+            | FieldType::HalfFloat
+            | FieldType::ScaledFloat => "REAL",
+            FieldType::Object
+            | FieldType::Nested
+            | FieldType::Flattened
+            | FieldType::FlatObject
+            | FieldType::Join
+            | FieldType::RankFeatures => "TEXT",
             // Unknown types, alias, etc. - store as TEXT
             _ => "TEXT",
         }

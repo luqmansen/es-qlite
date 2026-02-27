@@ -163,7 +163,11 @@ async fn create_index(base: &str, index: &str, mappings: Value) {
         .send()
         .await
         .expect("create index");
-    assert!(resp.status().is_success(), "create index failed on {}", base);
+    assert!(
+        resp.status().is_success(),
+        "create index failed on {}",
+        base
+    );
 }
 
 async fn refresh(base: &str, index: &str) {
@@ -238,7 +242,11 @@ async fn load_or_download_corpus() -> Vec<Value> {
             .filter(|p| p.extension().map(|e| e == "json").unwrap_or(false))
             .collect();
         if !files.is_empty() {
-            eprintln!("Loading cached corpus from {} ({} files)", CACHE_DIR, files.len());
+            eprintln!(
+                "Loading cached corpus from {} ({} files)",
+                CACHE_DIR,
+                files.len()
+            );
             let docs: Vec<Value> = files
                 .iter()
                 .filter_map(|f| {

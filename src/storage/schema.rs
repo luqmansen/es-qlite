@@ -3,7 +3,10 @@ use rusqlite::Connection;
 use crate::model::mapping::{FieldType, IndexMapping};
 
 /// Create all tables for a new index based on its mapping.
-pub fn create_index_tables(conn: &Connection, mapping: &IndexMapping) -> Result<(), rusqlite::Error> {
+pub fn create_index_tables(
+    conn: &Connection,
+    mapping: &IndexMapping,
+) -> Result<(), rusqlite::Error> {
     // 1. Create metadata table
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS _meta (
@@ -69,7 +72,11 @@ fn create_fts_triggers(
     text_columns: &[&String],
     _mapping: &IndexMapping,
 ) -> Result<(), rusqlite::Error> {
-    let col_list: String = text_columns.iter().map(|c| format!("\"{}\"", c)).collect::<Vec<_>>().join(", ");
+    let col_list: String = text_columns
+        .iter()
+        .map(|c| format!("\"{}\"", c))
+        .collect::<Vec<_>>()
+        .join(", ");
     let new_json_extracts: String = text_columns
         .iter()
         .map(|c| format!("json_extract(new._source, '$.{}')", c))
@@ -124,7 +131,10 @@ pub fn add_column(
         // Add to FTS5 — unfortunately FTS5 doesn't support ALTER TABLE ADD COLUMN.
         // We'd need to rebuild the FTS table. For now, we'll skip dynamic text field addition.
         // Non-text fields can be added to _source directly.
-        tracing::warn!("Dynamic text field addition to FTS5 not yet supported: {}", name);
+        tracing::warn!(
+            "Dynamic text field addition to FTS5 not yet supported: {}",
+            name
+        );
     } else {
         let sql = format!(
             "ALTER TABLE _source ADD COLUMN \"{}\" {};",

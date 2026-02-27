@@ -109,13 +109,105 @@ impl TestRunner {
             .find(|(k, _)| yaml_to_string(k) == "body")
             .map(|(_, v)| v);
 
+        let name = get_yaml_str(params_map, "name").unwrap_or_default();
+
         let (method, path) = match api {
+            // ─── Index management ───────────────────────────────────────
             "indices.create" => ("PUT", format!("/{index}")),
             "indices.delete" => ("DELETE", format!("/{index}")),
             "indices.exists" => ("HEAD", format!("/{index}")),
+            "indices.get" => ("GET", format!("/{index}")),
             "indices.refresh" => ("POST", format!("/{index}/_refresh")),
+            "indices.flush" => ("POST", format!("/{index}/_flush")),
+            "indices.forcemerge" => ("POST", format!("/{index}/_forcemerge")),
             "indices.get_mapping" | "indices.get_mappings" => ("GET", format!("/{index}/_mapping")),
             "indices.put_mapping" => ("PUT", format!("/{index}/_mapping")),
+            "indices.get_settings" => {
+                let setting_name = get_yaml_str(params_map, "name").unwrap_or_default();
+                if setting_name.is_empty() {
+                    ("GET", format!("/{index}/_settings"))
+                } else {
+                    ("GET", format!("/{index}/_settings/{setting_name}"))
+                }
+            }
+            "indices.get_field_mapping" => {
+                let fields = get_yaml_str(params_map, "fields").unwrap_or_default();
+                ("GET", format!("/{index}/_mapping/field/{fields}"))
+            }
+            "indices.put_settings" => ("PUT", format!("/{index}/_settings")),
+            "indices.open" => ("POST", format!("/{index}/_open")),
+            "indices.close" => ("POST", format!("/{index}/_close")),
+            "indices.stats" => ("GET", format!("/{index}/_stats")),
+            "indices.segments" => ("GET", format!("/{index}/_segments")),
+            "indices.recovery" => ("GET", format!("/{index}/_recovery")),
+            "indices.shard_stores" => ("GET", format!("/{index}/_shard_stores")),
+            "indices.validate_query" => ("POST", format!("/{index}/_validate/query")),
+            "indices.analyze" => {
+                if index.is_empty() {
+                    ("POST", "/_analyze".to_string())
+                } else {
+                    ("POST", format!("/{index}/_analyze"))
+                }
+            }
+            "indices.clear_cache" => ("POST", format!("/{index}/_cache/clear")),
+            "indices.upgrade" => ("POST", format!("/{index}/_upgrade")),
+            "indices.rollover" => ("POST", format!("/{index}/_rollover")),
+            "indices.shrink" => ("POST", format!("/{index}/_shrink")),
+            "indices.split" => ("POST", format!("/{index}/_split")),
+            "indices.clone" => ("POST", format!("/{index}/_clone")),
+            "indices.resolve_index" => ("GET", format!("/_resolve/index/{index}")),
+            "indices.add_block" => {
+                let block = get_yaml_str(params_map, "block").unwrap_or_default();
+                ("PUT", format!("/{index}/_block/{block}"))
+            }
+            // ─── Aliases ────────────────────────────────────────────────
+            "indices.get_alias" => {
+                if name.is_empty() {
+                    if index.is_empty() {
+                        ("GET", "/_alias".to_string())
+                    } else {
+                        ("GET", format!("/{index}/_alias"))
+                    }
+                } else if index.is_empty() {
+                    ("GET", format!("/_alias/{name}"))
+                } else {
+                    ("GET", format!("/{index}/_alias/{name}"))
+                }
+            }
+            "indices.put_alias" => ("PUT", format!("/{index}/_alias/{name}")),
+            "indices.delete_alias" => ("DELETE", format!("/{index}/_alias/{name}")),
+            "indices.exists_alias" => {
+                if index.is_empty() {
+                    ("HEAD", format!("/_alias/{name}"))
+                } else {
+                    ("HEAD", format!("/{index}/_alias/{name}"))
+                }
+            }
+            "indices.update_aliases" => ("POST", "/_aliases".to_string()),
+            // ─── Templates ──────────────────────────────────────────────
+            "indices.put_template" => ("PUT", format!("/_template/{name}")),
+            "indices.get_template" => ("GET", format!("/_template/{name}")),
+            "indices.delete_template" => ("DELETE", format!("/_template/{name}")),
+            "indices.exists_template" => ("HEAD", format!("/_template/{name}")),
+            "indices.put_index_template" => ("PUT", format!("/_index_template/{name}")),
+            "indices.get_index_template" => ("GET", format!("/_index_template/{name}")),
+            "indices.delete_index_template" => ("DELETE", format!("/_index_template/{name}")),
+            "indices.simulate_index_template" | "indices.simulate_template" => {
+                ("POST", format!("/_index_template/_simulate/{name}"))
+            }
+            "cluster.put_component_template"
+            | "cluster.get_component_template"
+            | "cluster.delete_component_template" => {
+                let method = if api.starts_with("cluster.put") {
+                    "PUT"
+                } else if api.starts_with("cluster.delete") {
+                    "DELETE"
+                } else {
+                    "GET"
+                };
+                (method, format!("/_component_template/{name}"))
+            }
+            // ─── Document CRUD ──────────────────────────────────────────
             "index" => {
                 if id.is_empty() {
                     ("POST", format!("/{index}/_doc"))
@@ -123,12 +215,50 @@ impl TestRunner {
                     ("PUT", format!("/{index}/_doc/{id}"))
                 }
             }
+            "create" => {
+                if id.is_empty() {
+                    ("POST", format!("/{index}/_doc"))
+                } else {
+                    ("PUT", format!("/{index}/_create/{id}"))
+                }
+            }
             "get" => ("GET", format!("/{index}/_doc/{id}")),
+            "get_source" => ("GET", format!("/{index}/_source/{id}")),
+            "exists" => ("HEAD", format!("/{index}/_doc/{id}")),
             "delete" => ("DELETE", format!("/{index}/_doc/{id}")),
             "update" => ("POST", format!("/{index}/_update/{id}")),
-            "search" => ("POST", format!("/{index}/_search")),
-            "count" => ("POST", format!("/{index}/_count")),
-            "bulk" => ("POST", "/_bulk".to_string()),
+            "explain" => ("POST", format!("/{index}/_explain/{id}")),
+            // ─── Search & Query ─────────────────────────────────────────
+            "search" => {
+                if index.is_empty() {
+                    ("POST", "/_search".to_string())
+                } else {
+                    ("POST", format!("/{index}/_search"))
+                }
+            }
+            "count" => {
+                if index.is_empty() {
+                    ("POST", "/_count".to_string())
+                } else {
+                    ("POST", format!("/{index}/_count"))
+                }
+            }
+            "msearch" => ("POST", "/_msearch".to_string()),
+            "scroll" => ("POST", "/_search/scroll".to_string()),
+            "field_caps" => ("POST", format!("/{index}/_field_caps")),
+            "delete_by_query" => ("POST", format!("/{index}/_delete_by_query")),
+            "suggest" => ("POST", format!("/{index}/_suggest")),
+            "termvectors" => ("GET", format!("/{index}/_termvectors/{id}")),
+            "mtermvectors" => ("POST", format!("/{index}/_mtermvectors")),
+            "mlt" => ("GET", format!("/{index}/_mlt/{id}")),
+            // ─── Bulk & Multi-get ───────────────────────────────────────
+            "bulk" => {
+                if index.is_empty() {
+                    ("POST", "/_bulk".to_string())
+                } else {
+                    ("POST", format!("/{index}/_bulk"))
+                }
+            }
             "mget" => {
                 if index.is_empty() {
                     ("POST", "/_mget".to_string())
@@ -136,14 +266,158 @@ impl TestRunner {
                     ("POST", format!("/{index}/_mget"))
                 }
             }
-            "cluster.health" => ("GET", "/_cluster/health".to_string()),
+            // ─── Cluster ────────────────────────────────────────────────
+            "cluster.health" => {
+                if index.is_empty() {
+                    ("GET", "/_cluster/health".to_string())
+                } else {
+                    ("GET", format!("/_cluster/health/{index}"))
+                }
+            }
+            "cluster.state" => ("GET", "/_cluster/state".to_string()),
+            "cluster.stats" => ("GET", "/_cluster/stats".to_string()),
+            "cluster.get_settings" => ("GET", "/_cluster/settings".to_string()),
+            "cluster.put_settings" => ("PUT", "/_cluster/settings".to_string()),
+            "cluster.pending_tasks" => ("GET", "/_cluster/pending_tasks".to_string()),
+            "cluster.allocation_explain" => ("POST", "/_cluster/allocation/explain".to_string()),
+            "cluster.reroute" => ("POST", "/_cluster/reroute".to_string()),
+            "cluster.remote_info" => ("GET", "/_remote/info".to_string()),
+            "cluster.post_voting_config_exclusions" => {
+                ("POST", "/_cluster/voting_config_exclusions".to_string())
+            }
+            "cluster.delete_voting_config_exclusions" => {
+                ("DELETE", "/_cluster/voting_config_exclusions".to_string())
+            }
+            // ─── Cat ────────────────────────────────────────────────────
             "cat.indices" => ("GET", "/_cat/indices".to_string()),
+            "cat.aliases" => ("GET", "/_cat/aliases".to_string()),
+            "cat.health" => ("GET", "/_cat/health".to_string()),
+            "cat.count" => ("GET", "/_cat/count".to_string()),
+            "cat.shards" => ("GET", "/_cat/shards".to_string()),
+            "cat.segments" => ("GET", "/_cat/segments".to_string()),
+            "cat.nodes" => ("GET", "/_cat/nodes".to_string()),
+            "cat.allocation" => ("GET", "/_cat/allocation".to_string()),
+            "cat.thread_pool" => ("GET", "/_cat/thread_pool".to_string()),
+            "cat.plugins" => ("GET", "/_cat/plugins".to_string()),
+            "cat.fielddata" => ("GET", "/_cat/fielddata".to_string()),
+            "cat.nodeattrs" => ("GET", "/_cat/nodeattrs".to_string()),
+            "cat.recovery" => ("GET", "/_cat/recovery".to_string()),
+            "cat.repositories" => ("GET", "/_cat/repositories".to_string()),
+            "cat.snapshots" => ("GET", "/_cat/snapshots".to_string()),
+            "cat.tasks" => ("GET", "/_cat/tasks".to_string()),
+            "cat.templates" => ("GET", "/_cat/templates".to_string()),
+            "cat.cluster_manager" => ("GET", "/_cat/cluster_manager".to_string()),
+            // ─── Nodes ──────────────────────────────────────────────────
+            "nodes.info" => ("GET", "/_nodes".to_string()),
+            "nodes.stats" => ("GET", "/_nodes/stats".to_string()),
+            "nodes.reload_secure_settings" => {
+                ("POST", "/_nodes/reload_secure_settings".to_string())
+            }
+            // ─── Tasks ──────────────────────────────────────────────────
+            "tasks.list" => ("GET", "/_tasks".to_string()),
+            "tasks.get" => {
+                let task_id = get_yaml_str(params_map, "task_id").unwrap_or_default();
+                ("GET", format!("/_tasks/{task_id}"))
+            }
+            "tasks.cancel" => {
+                let task_id = get_yaml_str(params_map, "task_id").unwrap_or_default();
+                ("POST", format!("/_tasks/{task_id}/_cancel"))
+            }
+            // ─── Ingest ─────────────────────────────────────────────────
+            "ingest.put_pipeline" => ("PUT", format!("/_ingest/pipeline/{id}")),
+            "ingest.get_pipeline" => ("GET", format!("/_ingest/pipeline/{id}")),
+            "ingest.delete_pipeline" => ("DELETE", format!("/_ingest/pipeline/{id}")),
+            // ─── Snapshot ───────────────────────────────────────────────
+            "snapshot.create_repository" => {
+                let repository = get_yaml_str(params_map, "repository").unwrap_or_default();
+                ("PUT", format!("/_snapshot/{repository}"))
+            }
+            "snapshot.get_repository" => {
+                let repository = get_yaml_str(params_map, "repository").unwrap_or_default();
+                ("GET", format!("/_snapshot/{repository}"))
+            }
+            "snapshot.create" => {
+                let repository = get_yaml_str(params_map, "repository").unwrap_or_default();
+                let snapshot = get_yaml_str(params_map, "snapshot").unwrap_or_default();
+                ("PUT", format!("/_snapshot/{repository}/{snapshot}"))
+            }
+            "snapshot.get" => {
+                let repository = get_yaml_str(params_map, "repository").unwrap_or_default();
+                let snapshot = get_yaml_str(params_map, "snapshot").unwrap_or_default();
+                ("GET", format!("/_snapshot/{repository}/{snapshot}"))
+            }
+            "snapshot.delete"
+            | "snapshot.restore"
+            | "snapshot.status"
+            | "snapshot.clone"
+            | "snapshot.verify_repository"
+            | "snapshot.cleanup_repository" => {
+                let repository = get_yaml_str(params_map, "repository").unwrap_or_default();
+                let snapshot = get_yaml_str(params_map, "snapshot").unwrap_or_default();
+                let suffix = match api {
+                    "snapshot.restore" => "/_restore",
+                    "snapshot.status" => "/_status",
+                    "snapshot.clone" => "/_clone",
+                    "snapshot.verify_repository" => "/_verify",
+                    "snapshot.cleanup_repository" => "/_cleanup",
+                    _ => "",
+                };
+                if snapshot.is_empty() {
+                    ("POST", format!("/_snapshot/{repository}{suffix}"))
+                } else {
+                    (
+                        "POST",
+                        format!("/_snapshot/{repository}/{snapshot}{suffix}"),
+                    )
+                }
+            }
+            // ─── Misc ───────────────────────────────────────────────────
+            "info" => ("GET", "/".to_string()),
+            "ping" => ("HEAD", "/".to_string()),
+            "search_shards" => ("GET", format!("/{index}/_search_shards")),
+            "scripts.painless_execute" => ("POST", "/_scripts/painless/_execute".to_string()),
+            "search_pipeline.put" | "search_pipeline.get" | "search_pipeline.delete" => {
+                let pipeline_id = get_yaml_str(params_map, "id").unwrap_or_default();
+                let method = if api.ends_with("put") {
+                    "PUT"
+                } else if api.ends_with("delete") {
+                    "DELETE"
+                } else {
+                    "GET"
+                };
+                (method, format!("/_search/pipeline/{pipeline_id}"))
+            }
             _ => {
                 return Err(format!("Unsupported API: {api}"));
             }
         };
 
         let url = format!("{}{path}", self.base_url);
+
+        // Collect query parameters from params that aren't index/id/name/body/block/repository/snapshot/task_id
+        let reserved = [
+            "index",
+            "id",
+            "name",
+            "body",
+            "block",
+            "repository",
+            "snapshot",
+            "task_id",
+            "fields",
+        ];
+        let query_params: Vec<(String, String)> = params_map
+            .iter()
+            .filter_map(|(k, v)| {
+                let key = yaml_to_string(k);
+                if reserved.contains(&key.as_str()) {
+                    None
+                } else {
+                    Some((key, yaml_to_string(v)))
+                }
+            })
+            .collect();
+
         let mut request = match method {
             "GET" => self.client.get(&url),
             "PUT" => self.client.put(&url),
@@ -152,6 +426,10 @@ impl TestRunner {
             "HEAD" => self.client.head(&url),
             _ => return Err(format!("Unknown method: {method}")),
         };
+
+        if !query_params.is_empty() {
+            request = request.query(&query_params);
+        }
 
         if let Some(body_val) = body {
             // For bulk, we need NDJSON format
@@ -609,7 +887,7 @@ async fn test_basic_crud_yaml_style() {
 
 /// Tests that we expect to pass. If any of these fail, the test suite fails (regression).
 const EXPECTED_PASS: &[(&str, &str)] = &[
-    // ─── cluster.health ─────────────────────────────────────────────────────
+    // ─── cluster ────────────────────────────────────────────────────────────
     ("cluster.health/10_basic.yml", "cluster health basic test"),
     (
         "cluster.health/10_basic.yml",
@@ -627,13 +905,302 @@ const EXPECTED_PASS: &[(&str, &str)] = &[
         "cluster.health/10_basic.yml",
         "cluster health basic test, one index with wait for no initializing shards",
     ),
+    (
+        "cluster.allocation_explain/10_basic.yml",
+        "bad cluster shard allocation explanation request",
+    ),
+    (
+        "cluster.remote_info/10_info.yml",
+        "Get an empty remote info",
+    ),
+    ("cluster.reroute/10_basic.yml", "Basic sanity check"),
+    (
+        "cluster.reroute/20_response_filtering.yml",
+        "Do not return metadata by default",
+    ),
+    (
+        "cluster.voting_config_exclusions/10_basic.yml",
+        "teardown",
+    ),
+    (
+        "cluster.voting_config_exclusions/10_basic.yml",
+        "Throw exception when adding voting config exclusion without specifying nodes",
+    ),
+    (
+        "cluster.voting_config_exclusions/10_basic.yml",
+        "Throw exception when adding voting config exclusion and specifying both node_ids and node_names",
+    ),
+    // ─── bulk ───────────────────────────────────────────────────────────────
+    ("bulk/10_basic.yml", "Array of objects"),
+    // ─── create ─────────────────────────────────────────────────────────────
+    ("create/10_with_id.yml", "Create with ID"),
+    ("create/15_without_id.yml", "Create without ID"),
+    (
+        "create/70_nested.yml",
+        "Indexing a doc with No. nested objects more than index.mapping.nested_objects.limit should fail",
+    ),
     // ─── delete ─────────────────────────────────────────────────────────────
+    ("delete/10_basic.yml", "Basic"),
     ("delete/60_missing.yml", "Missing document with catch"),
+    // ─── exists ─────────────────────────────────────────────────────────────
+    ("exists/70_defaults.yml", "Client-side default type"),
     // ─── get ────────────────────────────────────────────────────────────────
+    ("get/10_basic.yml", "Basic"),
+    ("get/15_default_values.yml", "Default values"),
     ("get/60_realtime_refresh.yml", "Realtime Refresh"),
     ("get/80_missing.yml", "Missing document with catch"),
+    // ─── get_source ─────────────────────────────────────────────────────────
+    ("get_source/80_missing.yml", "Missing document with catch"),
+    ("get_source/80_missing.yml", "Missing document with ignore"),
+    (
+        "get_source/85_source_missing.yml",
+        "Missing document source with catch",
+    ),
+    (
+        "get_source/85_source_missing.yml",
+        "Missing document source with ignore",
+    ),
     // ─── index ──────────────────────────────────────────────────────────────
+    ("index/10_with_id.yml", "Index with ID"),
+    ("index/12_result.yml", "Index result field"),
     ("index/100_partial_flat_object.yml", "teardown"),
+    // ─── indices.create ─────────────────────────────────────────────────────
+    ("indices.create/10_basic.yml", "Create index with mappings"),
+    ("indices.create/10_basic.yml", "Create index"),
+    (
+        "indices.create/10_basic.yml",
+        "Create index with invalid mappings",
+    ),
+    // ─── indices.delete ─────────────────────────────────────────────────────
+    (
+        "indices.delete/10_basic.yml",
+        "Delete index against alias",
+    ),
+    (
+        "indices.delete/10_basic.yml",
+        "Delete index against alias -  multiple indices",
+    ),
+    (
+        "indices.delete/10_basic.yml",
+        "Delete index against wildcard matching alias - disallow no indices",
+    ),
+    (
+        "indices.delete/10_basic.yml",
+        "Delete index against wildcard matching alias - disallow no indices - multiple indices",
+    ),
+    // ─── indices.delete_alias ───────────────────────────────────────────────
+    (
+        "indices.delete_alias/all_path_options.yml",
+        "check 404 on no matching alias",
+    ),
+    (
+        "indices.delete_alias/all_path_options.yml",
+        "check delete with blank index and blank alias",
+    ),
+    // ─── indices.exists ─────────────────────────────────────────────────────
+    (
+        "indices.exists/20_read_only_index.yml",
+        "Test indices.exists on a read only index",
+    ),
+    // ─── indices management ─────────────────────────────────────────────────
+    (
+        "indices.analyze/20_analyze_limit.yml",
+        "_analyze with No. generated tokens more than index.analyze.max_token_count should fail",
+    ),
+    (
+        "indices.analyze/20_analyze_limit.yml",
+        "_analyze with explain with No. generated tokens more than index.analyze.max_token_count should fail",
+    ),
+    ("indices.blocks/10_basic.yml", "Basic test for index blocks"),
+    ("indices.clear_cache/10_basic.yml", "clear_cache test"),
+    (
+        "indices.clear_cache/10_basic.yml",
+        "clear_cache with request set to false",
+    ),
+    (
+        "indices.clear_cache/10_basic.yml",
+        "clear_cache with fielddata set to true",
+    ),
+    (
+        "indices.forcemerge/10_basic.yml",
+        "Force merge index tests",
+    ),
+    // ─── indices.get ────────────────────────────────────────────────────────
+    ("indices.get/10_basic.yml", "Get index infos"),
+    (
+        "indices.get/10_basic.yml",
+        "Get index infos should work for wildcards",
+    ),
+    (
+        "indices.get/10_basic.yml",
+        "Get index infos by default shouldn't return index creation date and version in readable format",
+    ),
+    (
+        "indices.get/10_basic.yml",
+        "Missing index should throw an Error",
+    ),
+    (
+        "indices.get/10_basic.yml",
+        "Should throw error if allow_no_indices=false",
+    ),
+    (
+        "indices.get/10_basic.yml",
+        "Should return test_index_2 and test_index_3 if expand_wildcards=open,closed",
+    ),
+    (
+        "indices.get/10_basic.yml",
+        "Should return an exception when querying invalid indices",
+    ),
+    // ─── indices.get_alias ──────────────────────────────────────────────────
+    (
+        "indices.get_alias/10_basic.yml",
+        "Get and index with no aliases via /{index}/_alias/",
+    ),
+    (
+        "indices.get_alias/10_basic.yml",
+        "Getting alias on an non-existent index should return 404",
+    ),
+    (
+        "indices.get_alias/30_wildcards.yml",
+        "Exclusion of non wildcarded aliases",
+    ),
+    // ─── indices.get_field_mapping ──────────────────────────────────────────
+    (
+        "indices.get_field_mapping/40_missing_index.yml",
+        "Raise 404 when index doesn't exist",
+    ),
+    // ─── indices.get_mapping ────────────────────────────────────────────────
+    (
+        "indices.get_mapping/10_basic.yml",
+        "Get /{index}/_mapping with empty mappings",
+    ),
+    ("indices.get_mapping/10_basic.yml", "Get /{index}/_mapping"),
+    (
+        "indices.get_mapping/30_missing_index.yml",
+        "Raise 404 when index doesn't exist",
+    ),
+    (
+        "indices.get_mapping/30_missing_index.yml",
+        "Index missing, no indexes",
+    ),
+    (
+        "indices.get_mapping/30_missing_index.yml",
+        "Index missing, ignore_unavailable=true, allow_no_indices=false",
+    ),
+    (
+        "indices.get_mapping/50_wildcard_expansion.yml",
+        "Get test-* with wildcard_expansion=none allow_no_indices=false",
+    ),
+    // ─── indices.get_template / put_template ────────────────────────────────
+    (
+        "indices.get_template/20_get_missing.yml",
+        "Get missing template",
+    ),
+    (
+        "indices.get_index_template/20_get_missing.yml",
+        "Get missing template",
+    ),
+    (
+        "indices.put_template/10_basic.yml",
+        "Put index template without index_patterns",
+    ),
+    (
+        "indices.put_index_template/10_basic.yml",
+        "Put index template without index_patterns",
+    ),
+    // ─── indices.open ───────────────────────────────────────────────────────
+    (
+        "indices.open/10_basic.yml",
+        "Basic test for index open/close",
+    ),
+    ("indices.open/20_multiple_indices.yml", "All indices"),
+    ("indices.open/20_multiple_indices.yml", "Trailing wildcard"),
+    ("indices.open/20_multiple_indices.yml", "Only wildcard"),
+    // ─── indices.put_alias ──────────────────────────────────────────────────
+    (
+        "indices.put_alias/10_basic.yml",
+        "Can't create alias with invalid characters",
+    ),
+    (
+        "indices.put_alias/10_basic.yml",
+        "Can't create alias with the same name as an index",
+    ),
+    (
+        "indices.put_alias/all_path_options.yml",
+        "put alias per index",
+    ),
+    (
+        "indices.put_alias/all_path_options.yml",
+        "put alias prefix* index",
+    ),
+    (
+        "indices.put_alias/all_path_options.yml",
+        "put alias in list of indices",
+    ),
+    (
+        "indices.put_alias/all_path_options.yml",
+        "put alias with blank index",
+    ),
+    (
+        "indices.put_alias/all_path_options.yml",
+        "put alias with missing name",
+    ),
+    // ─── indices.put_mapping ────────────────────────────────────────────────
+    (
+        "indices.put_mapping/10_basic.yml",
+        "Create index with invalid mappings",
+    ),
+    // ─── indices.put_settings ───────────────────────────────────────────────
+    (
+        "indices.put_settings/10_basic.yml",
+        "Test indices settings allow_no_indices",
+    ),
+    // ─── indices.recovery ───────────────────────────────────────────────────
+    (
+        "indices.recovery/10_basic.yml",
+        "Indices recovery test index name not matching",
+    ),
+    (
+        "indices.recovery/10_basic.yml",
+        "Indices recovery test, wildcard not matching any index",
+    ),
+    // ─── indices.rollover ───────────────────────────────────────────────────
+    (
+        "indices.rollover/10_basic.yml",
+        "Rollover with dry-run but target index exists",
+    ),
+    // ─── indices.stats ──────────────────────────────────────────────────────
+    (
+        "indices.stats/20_translog.yml",
+        "Translog last modified age stats",
+    ),
+    // ─── indices.upgrade ────────────────────────────────────────────────────
+    (
+        "indices.upgrade/10_basic.yml",
+        "Upgrade indices disallow no indices",
+    ),
+    (
+        "indices.upgrade/10_basic.yml",
+        "Upgrade indices disallow unavailable",
+    ),
+    // ─── info / ping ────────────────────────────────────────────────────────
+    ("info/10_info.yml", "Info"),
+    ("info/20_lucene_version.yml", "Lucene Version"),
+    ("ping/10_ping.yml", "Ping"),
+    // ─── ingest ─────────────────────────────────────────────────────────────
+    ("ingest/10_basic.yml", "Test invalid config"),
+    // ─── mtermvectors ───────────────────────────────────────────────────────
+    (
+        "mtermvectors/20_deprecated.yml",
+        "Deprecated camel case and _ parameters should fail in Term Vectors query",
+    ),
+    // ─── scroll ─────────────────────────────────────────────────────────────
+    (
+        "scroll/10_basic.yml",
+        "Scroll cannot used the request cache",
+    ),
+    ("scroll/10_basic.yml", "Scroll with size 0"),
+    ("scroll/20_keep_alive.yml", "teardown"),
     // ─── search ─────────────────────────────────────────────────────────────
     (
         "search/110_field_collapsing.yml",
@@ -659,11 +1226,55 @@ const EXPECTED_PASS: &[(&str, &str)] = &[
         "search/80_indices_options.yml",
         "Missing index date math with catch",
     ),
+    // ─── search.aggregation ─────────────────────────────────────────────────
+    ("search.aggregation/20_terms.yml", "No field or script"),
+    ("search.aggregation/250_moving_fn.yml", "Bad window"),
+    (
+        "search.aggregation/250_moving_fn.yml",
+        "Not under date_histo",
+    ),
+    (
+        "search.aggregation/270_median_absolute_deviation_metric.yml",
+        "bad arguments",
+    ),
+    (
+        "search.aggregation/30_sig_terms.yml",
+        "Misspelled fields get \"did you mean\"",
+    ),
+    // ─── snapshot ───────────────────────────────────────────────────────────
+    ("snapshot.clone/10_basic.yml", "Clone a snapshot"),
+    (
+        "snapshot.get/10_basic.yml",
+        "Get missing snapshot info throws an exception",
+    ),
+    (
+        "snapshot.get_repository/10_basic.yml",
+        "Get missing repository by name",
+    ),
+    (
+        "snapshot.status/10_basic.yml",
+        "Get missing snapshot status throws an exception",
+    ),
+    // ─── update ─────────────────────────────────────────────────────────────
+    ("update/20_doc_upsert.yml", "Doc upsert"),
+    ("update/22_doc_as_upsert.yml", "Doc as upsert"),
+    (
+        "update/90_error.yml",
+        "Misspelled fields get \"did you mean\"",
+    ),
+    ("update/95_require_alias.yml", "Set require_alias flag"),
 ];
 
 /// Files to skip entirely, with reasons.
+///
+/// Categories:
+///   - auto-create: tests assume index auto-creation on first document
+///   - field-type:  unsupported field types (geo_point, flat_object, etc.)
+///   - feature:     unsupported features (routing, versioning, _source filtering, etc.)
+///   - api:         entire API category not implemented
+///   - runner:      YAML runner limitation (stash variables, regex matching, etc.)
 const SKIP_FILES: &[(&str, &str)] = &[
-    // --- Unsupported field types / mappings ---
+    // ─── Unsupported field types / mappings ─────────────────────────────
     (
         "index/80_geo_point.yml",
         "geo_point field type not supported",
@@ -678,15 +1289,15 @@ const SKIP_FILES: &[(&str, &str)] = &[
     ),
     (
         "index/91_flat_object_null_value.yml",
-        "flat_object field type not supported",
+        "flat_object not supported",
     ),
     (
         "index/92_flat_object_support_doc_values.yml",
-        "flat_object field type not supported",
+        "flat_object not supported",
     ),
     (
         "index/105_partial_flat_object_nested.yml",
-        "flat_object nested not supported",
+        "flat_object not supported",
     ),
     (
         "index/115_constant_keyword.yml",
@@ -713,10 +1324,6 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "date_nanos field type not supported",
     ),
     (
-        "search/250_distance_feature.yml",
-        "distance_feature query not supported",
-    ),
-    (
         "search/270_wildcard_fieldtype_queries.yml",
         "wildcard field type not supported",
     ),
@@ -724,41 +1331,26 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "search/390_search_as_you_type.yml",
         "search_as_you_type not supported",
     ),
-    // --- Unsupported APIs ---
+    // ─── Unsupported features ──────────────────────────────────────────
+    // Routing
+    ("delete/30_routing.yml", "routing not supported"),
+    ("get/40_routing.yml", "routing not supported"),
+    ("index/40_routing.yml", "routing not supported"),
+    ("mget/40_routing.yml", "routing not supported"),
+    ("create/40_routing.yml", "routing not supported"),
+    ("exists/40_routing.yml", "routing not supported"),
+    ("get_source/40_routing.yml", "routing not supported"),
+    ("update/40_routing.yml", "routing not supported"),
     (
-        "cat.indices/10_basic.yml",
-        "cat indices text format + query params not supported",
+        "indices.update_aliases/20_routing.yml",
+        "routing not supported",
     ),
-    ("cat.indices/20_hidden.yml", "hidden indices not supported"),
-    (
-        "cluster.health/30_indices_options.yml",
-        "indices.close API not supported",
-    ),
-    (
-        "mget/14_alias_to_multiple_indices.yml",
-        "index aliases not supported",
-    ),
-    // --- Unsupported features ---
-    ("bulk/40_source.yml", "_source filtering not supported"),
-    (
-        "bulk/50_refresh.yml",
-        "refresh query parameter not supported",
-    ),
+    // Versioning / compare-and-swap
     (
         "bulk/80_cas.yml",
         "compare-and-swap (if_seq_no) not supported",
     ),
-    ("bulk/90_pipeline.yml", "ingest pipelines not supported"),
-    ("bulk/100_error_traces.yml", "error_trace not supported"),
-    (
-        "bulk/110_bulk_adaptive_shard_select.yml",
-        "adaptive shard selection not supported",
-    ),
-    ("delete/11_shard_header.yml", "shard header not supported"),
-    (
-        "delete/20_cas.yml",
-        "compare-and-swap (if_seq_no) not supported",
-    ),
+    ("delete/20_cas.yml", "compare-and-swap not supported"),
     (
         "delete/25_external_version.yml",
         "external versioning not supported",
@@ -767,24 +1359,8 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "delete/26_external_gte_version.yml",
         "external versioning not supported",
     ),
-    ("delete/30_routing.yml", "routing not supported"),
-    (
-        "delete/50_refresh.yml",
-        "refresh query parameter not supported",
-    ),
-    ("get/20_stored_fields.yml", "stored fields not supported"),
-    ("get/40_routing.yml", "routing not supported"),
-    ("get/50_with_headers.yml", "custom headers not supported"),
-    (
-        "get/70_source_filtering.yml",
-        "_source filtering not supported",
-    ),
     ("get/90_versions.yml", "external versioning not supported"),
-    ("index/20_optype.yml", "op_type not supported"),
-    (
-        "index/30_cas.yml",
-        "compare-and-swap (if_seq_no) not supported",
-    ),
+    ("index/30_cas.yml", "compare-and-swap not supported"),
     (
         "index/35_external_version.yml",
         "external versioning not supported",
@@ -793,11 +1369,83 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "index/36_external_gte_version.yml",
         "external versioning not supported",
     ),
-    ("index/40_routing.yml", "routing not supported"),
+    (
+        "create/35_external_version.yml",
+        "external versioning not supported",
+    ),
+    ("update/35_if_seq_no.yml", "compare-and-swap not supported"),
+    // _source filtering
+    ("bulk/40_source.yml", "_source filtering not supported"),
+    (
+        "get/70_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "mget/70_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "get_source/70_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "search/10_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "update/80_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    (
+        "explain/20_source_filtering.yml",
+        "_source filtering not supported",
+    ),
+    // Stored fields
+    ("get/20_stored_fields.yml", "stored fields not supported"),
+    ("mget/20_stored_fields.yml", "stored fields not supported"),
+    (
+        "search/100_stored_fields.yml",
+        "stored fields not supported",
+    ),
+    // Refresh query parameter
+    (
+        "bulk/50_refresh.yml",
+        "refresh query parameter not supported",
+    ),
+    (
+        "delete/50_refresh.yml",
+        "refresh query parameter not supported",
+    ),
     (
         "index/60_refresh.yml",
         "refresh query parameter not supported",
     ),
+    (
+        "create/60_refresh.yml",
+        "refresh query parameter not supported",
+    ),
+    (
+        "update/60_refresh.yml",
+        "refresh query parameter not supported",
+    ),
+    // Shard headers / error traces
+    ("delete/11_shard_header.yml", "shard header not supported"),
+    ("update/11_shard_header.yml", "shard header not supported"),
+    ("bulk/100_error_traces.yml", "error_trace not supported"),
+    ("mget/90_error_traces.yml", "error_trace not supported"),
+    ("msearch/30_error_traces.yml", "error_trace not supported"),
+    (
+        "mtermvectors/30_error_traces.yml",
+        "error_trace not supported",
+    ),
+    // Other unsupported features
+    ("bulk/90_pipeline.yml", "ingest pipelines not supported"),
+    (
+        "bulk/110_bulk_adaptive_shard_select.yml",
+        "adaptive shard selection not supported",
+    ),
+    ("get/50_with_headers.yml", "custom headers not supported"),
+    ("index/20_optype.yml", "op_type not supported"),
     ("index/70_require_alias.yml", "require_alias not supported"),
     (
         "index/110_strict_allow_templates.yml",
@@ -811,29 +1459,36 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "index/120_field_name.yml",
         "field name validation not supported",
     ),
-    ("mget/20_stored_fields.yml", "stored fields not supported"),
-    ("mget/40_routing.yml", "routing not supported"),
     (
-        "mget/60_realtime_refresh.yml",
-        "realtime refresh not supported",
+        "mget/14_alias_to_multiple_indices.yml",
+        "mget alias resolution not supported",
     ),
     (
-        "mget/70_source_filtering.yml",
-        "_source filtering not supported",
+        "mget/60_realtime_refresh.yml",
+        "realtime refresh in mget not supported",
     ),
     (
         "mget/80_deprecated.yml",
         "deprecated type parameter not supported",
     ),
-    ("mget/90_error_traces.yml", "error_trace not supported"),
     (
-        "search/10_source_filtering.yml",
-        "_source filtering not supported",
+        "cluster.health/20_request_timeout.yml",
+        "timeout simulation not supported",
     ),
     (
-        "search/100_stored_fields.yml",
-        "stored fields not supported",
+        "cluster.health/30_indices_options.yml",
+        "indices.close API not supported",
     ),
+    (
+        "cat.indices/10_basic.yml",
+        "cat indices text format not supported",
+    ),
+    ("cat.indices/20_hidden.yml", "hidden indices not supported"),
+    (
+        "count/20_query_string.yml",
+        "query_string via URL q= param not supported",
+    ),
+    // ─── Unsupported query types / search features ─────────────────────
     (
         "search/115_multiple_field_collapsing.yml",
         "multiple field collapsing not supported",
@@ -867,14 +1522,34 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "rescore explain not supported",
     ),
     (
+        "search/220_total_hits_object.yml",
+        "track_total_hits not supported",
+    ),
+    (
         "search/230_interval_query.yml",
         "intervals query not supported",
     ),
-    ("search/260_sort_double.yml", "sort not supported"),
-    ("search/260_sort_geopoint.yml", "sort not supported"),
-    ("search/260_sort_long.yml", "sort not supported"),
-    ("search/260_sort_mixed.yml", "sort not supported"),
-    ("search/260_sort_unsigned_long.yml", "sort not supported"),
+    (
+        "search/250_distance_feature.yml",
+        "distance_feature query not supported",
+    ),
+    (
+        "search/260_sort_double.yml",
+        "sort mode (min/max/avg on arrays) not supported",
+    ),
+    (
+        "search/260_sort_geopoint.yml",
+        "geo_point sort not supported",
+    ),
+    (
+        "search/260_sort_long.yml",
+        "sort mode (min/max/avg on arrays) not supported",
+    ),
+    ("search/260_sort_mixed.yml", "sort mode not supported"),
+    (
+        "search/260_sort_unsigned_long.yml",
+        "unsigned_long not supported",
+    ),
     (
         "search/300_sequence_numbers.yml",
         "sequence number tracking not supported",
@@ -924,77 +1599,28 @@ const SKIP_FILES: &[(&str, &str)] = &[
         "search/400_combined_fields.yml",
         "combined_fields query not supported",
     ),
+    (
+        "search/400_max_score.yml",
+        "max_score tracking not supported",
+    ),
     ("search/90_search_after.yml", "search_after not supported"),
     (
         "search/95_search_after_shard_doc.yml",
         "search_after not supported",
     ),
-    ("search/issue4895.yml", "query_string query not supported"),
-    ("search/issue9606.yml", "query_string query not supported"),
     (
-        "cluster.health/20_request_timeout.yml",
-        "timeout simulation not supported",
+        "search/issue4895.yml",
+        "query_string via URL q= not supported",
     ),
     (
-        "count/20_query_string.yml",
-        "query_string query not supported",
+        "search/issue9606.yml",
+        "query_string via URL q= not supported",
     ),
-    // --- Auto-create index (index must be created explicitly) ---
-    (
-        "bulk/10_basic.yml",
-        "auto-create index on bulk not supported",
-    ),
-    (
-        "bulk/20_list_of_strings.yml",
-        "auto-create index on bulk not supported",
-    ),
-    (
-        "bulk/30_big_string.yml",
-        "auto-create index on bulk not supported",
-    ),
-    ("count/10_basic.yml", "auto-create index not supported"),
-    ("delete/10_basic.yml", "auto-create index not supported"),
-    ("delete/12_result.yml", "auto-create index not supported"),
-    ("get/10_basic.yml", "auto-create index not supported"),
-    (
-        "get/15_default_values.yml",
-        "auto-create index not supported",
-    ),
-    ("index/10_with_id.yml", "auto-create index not supported"),
-    ("index/12_result.yml", "auto-create index not supported"),
-    ("index/15_without_id.yml", "auto-create index not supported"),
-    ("mget/10_basic.yml", "auto-create index not supported"),
-    (
-        "mget/12_non_existent_index.yml",
-        "auto-create index not supported",
-    ),
-    (
-        "mget/13_missing_metadata.yml",
-        "auto-create index not supported",
-    ),
-    ("mget/15_ids.yml", "auto-create index not supported"),
-    (
-        "mget/17_default_index.yml",
-        "auto-create index not supported",
-    ),
-    // --- Response format differences ---
-    (
-        "search/220_total_hits_object.yml",
-        "track_total_hits parameter not supported",
-    ),
-    ("search/360_from_and_size.yml", "requires auto-create index"),
-    (
-        "search/400_max_score.yml",
-        "max_score tracking not supported",
-    ),
-    // --- Stash variable / advanced runner features ---
-    ("search/20_default_values.yml", "requires auto-create index"),
     ("search/30_limits.yml", "max result window not supported"),
     ("search/40_indices_boost.yml", "indices_boost not supported"),
-    ("search/50_multi_match.yml", "requires auto-create index"),
     (
         "search/60_query_string.yml",
-        "query_string query not supported",
+        "query_string via URL q= not supported",
     ),
     (
         "search/61_query_string_field_alias.yml",
@@ -1003,6 +1629,342 @@ const SKIP_FILES: &[(&str, &str)] = &[
     (
         "search/70_response_filtering.yml",
         "response filtering not supported",
+    ),
+    // ─── Unsupported API categories (entire directories) ───────────────
+    // These APIs are outside the scope of es-sqlite's single-node SQLite architecture.
+    // Cat APIs (except cat.indices which has its own skip entries above)
+    (
+        "cat.aliases/10_basic.yml",
+        "_cat/aliases text format not supported (JSON alias API works)",
+    ),
+    (
+        "cat.aliases/20_headers.yml",
+        "_cat/aliases text format not supported",
+    ),
+    (
+        "cat.aliases/30_json.yml",
+        "_cat/aliases text format not supported",
+    ),
+    (
+        "cat.aliases/40_hidden.yml",
+        "_cat/aliases hidden index filter not supported",
+    ),
+    (
+        "cat.allocation/10_basic.yml",
+        "cat.allocation not supported",
+    ),
+    (
+        "cat.cluster_manager/10_basic.yml",
+        "cat.cluster_manager not supported",
+    ),
+    ("cat.count/10_basic.yml", "cat.count not supported"),
+    ("cat.fielddata/10_basic.yml", "cat.fielddata not supported"),
+    (
+        "cat.health/10_basic.yml",
+        "cat.health text format not supported",
+    ),
+    ("cat.nodeattrs/10_basic.yml", "cat.nodeattrs not supported"),
+    ("cat.nodes/10_basic.yml", "cat.nodes not supported"),
+    ("cat.plugins/10_basic.yml", "cat.plugins not supported"),
+    ("cat.recovery/10_basic.yml", "cat.recovery not supported"),
+    (
+        "cat.repositories/10_basic.yml",
+        "cat.repositories not supported",
+    ),
+    ("cat.segments/10_basic.yml", "cat.segments not supported"),
+    ("cat.shards/10_basic.yml", "cat.shards not supported"),
+    ("cat.snapshots/10_basic.yml", "cat.snapshots not supported"),
+    ("cat.tasks/10_basic.yml", "cat.tasks not supported"),
+    ("cat.templates/10_basic.yml", "cat.templates not supported"),
+    (
+        "cat.thread_pool/10_basic.yml",
+        "cat.thread_pool not supported",
+    ),
+    // Snapshot/restore
+    ("snapshot.create/10_basic.yml", "snapshot API not supported"),
+    (
+        "snapshot.restore/10_basic.yml",
+        "snapshot API not supported",
+    ),
+    // Search sub-APIs
+    (
+        "search.backpressure/10_basic.yml",
+        "search backpressure not supported",
+    ),
+    (
+        "search.highlight/10_unified.yml",
+        "search highlighting not supported",
+    ),
+    (
+        "search.highlight/20_fvh.yml",
+        "search highlighting not supported",
+    ),
+    (
+        "search.highlight/30_max_analyzed_offset.yml",
+        "search highlighting not supported",
+    ),
+    (
+        "search.highlight/40_keyword_ignore.yml",
+        "search highlighting not supported",
+    ),
+    ("search.inner_hits/10_basic.yml", "inner_hits not supported"),
+    (
+        "search.inner_hits/20_highlighting.yml",
+        "inner_hits not supported",
+    ),
+    (
+        "search.inner_hits/20_highlighting_field_match_only_text.yml",
+        "inner_hits not supported",
+    ),
+    (
+        "search.profile/10_fetch_phase.yml",
+        "search profiling not supported",
+    ),
+    (
+        "search_pipeline/10_basic.yml",
+        "search pipelines not supported",
+    ),
+    ("search_shards/10_basic.yml", "search_shards not supported"),
+    (
+        "search_shards/10_basic_field_match_only_field.yml",
+        "search_shards not supported",
+    ),
+    ("search_shards/20_slice.yml", "search_shards not supported"),
+    // More Like This / Suggest / Explain
+    ("mlt/10_basic.yml", "more_like_this not supported"),
+    ("mlt/20_docs.yml", "more_like_this not supported"),
+    ("mlt/30_unlike.yml", "more_like_this not supported"),
+    ("suggest/10_basic.yml", "suggest API not supported"),
+    ("suggest/20_completion.yml", "suggest API not supported"),
+    ("suggest/30_context.yml", "suggest API not supported"),
+    ("suggest/40_typed_keys.yml", "suggest API not supported"),
+    (
+        "suggest/50_completion_with_multi_fields.yml",
+        "suggest API not supported",
+    ),
+    ("explain/10_basic.yml", "explain API not supported"),
+    ("explain/30_query_string.yml", "explain API not supported"),
+    // Field capabilities
+    ("field_caps/10_basic.yml", "field_caps not supported"),
+    ("field_caps/20_meta.yml", "field_caps not supported"),
+    ("field_caps/30_filter.yml", "field_caps not supported"),
+    // Termvectors
+    ("termvectors/10_basic.yml", "termvectors not supported"),
+    ("termvectors/20_issue7121.yml", "termvectors not supported"),
+    ("termvectors/30_realtime.yml", "termvectors not supported"),
+    ("mtermvectors/10_basic.yml", "mtermvectors not supported"),
+    // Multi-search
+    ("msearch/10_basic.yml", "msearch not supported"),
+    ("msearch/11_status.yml", "msearch not supported"),
+    ("msearch/20_typed_keys.yml", "msearch not supported"),
+    // Scripts
+    ("scripts/20_get_script_context.yml", "scripts not supported"),
+    (
+        "scripts/25_get_script_languages.yml",
+        "scripts not supported",
+    ),
+    // PIT (point in time)
+    ("pit/10_basic.yml", "point-in-time not supported"),
+    // Range (specialized range type tests)
+    ("range/10_basic.yml", "range field type not supported"),
+    // WLM stats
+    (
+        "wlm_stats/10_basic.yml",
+        "workload management not supported",
+    ),
+    // ─── Aggregation specs (only terms agg supported) ──────────────────
+    (
+        "search.aggregation/10_histogram.yml",
+        "histogram agg not supported",
+    ),
+    ("search.aggregation/40_range.yml", "range agg not supported"),
+    (
+        "search.aggregation/50_filter.yml",
+        "filter agg not supported",
+    ),
+    (
+        "search.aggregation/70_adjacency_matrix.yml",
+        "adjacency_matrix agg not supported",
+    ),
+    (
+        "search.aggregation/90_sig_text.yml",
+        "sig_text agg not supported",
+    ),
+    (
+        "search.aggregation/90_sig_text_field_match_only_text.yml",
+        "sig_text agg not supported",
+    ),
+    (
+        "search.aggregation/100_avg_metric.yml",
+        "avg agg not supported",
+    ),
+    (
+        "search.aggregation/100_avg_metric_unsigned.yml",
+        "avg agg not supported",
+    ),
+    (
+        "search.aggregation/110_max_metric.yml",
+        "max agg not supported",
+    ),
+    (
+        "search.aggregation/110_max_metric_unsigned.yml",
+        "max agg not supported",
+    ),
+    (
+        "search.aggregation/120_min_metric.yml",
+        "min agg not supported",
+    ),
+    (
+        "search.aggregation/120_min_metric_unsigned.yml",
+        "min agg not supported",
+    ),
+    (
+        "search.aggregation/130_sum_metric.yml",
+        "sum agg not supported",
+    ),
+    (
+        "search.aggregation/130_sum_metric_unsigned.yml",
+        "sum agg not supported",
+    ),
+    (
+        "search.aggregation/140_value_count_metric.yml",
+        "value_count agg not supported",
+    ),
+    (
+        "search.aggregation/140_value_count_metric_unsigned.yml",
+        "value_count agg not supported",
+    ),
+    (
+        "search.aggregation/150_stats_metric.yml",
+        "stats agg not supported",
+    ),
+    (
+        "search.aggregation/150_stats_metric_unsigned.yml",
+        "stats agg not supported",
+    ),
+    (
+        "search.aggregation/160_extended_stats_metric.yml",
+        "extended_stats agg not supported",
+    ),
+    (
+        "search.aggregation/160_extended_stats_metric_unsigned.yml",
+        "extended_stats agg not supported",
+    ),
+    (
+        "search.aggregation/170_cardinality_metric.yml",
+        "cardinality agg not supported",
+    ),
+    (
+        "search.aggregation/170_cardinality_metric_unsigned.yml",
+        "cardinality agg not supported",
+    ),
+    (
+        "search.aggregation/180_percentiles_tdigest_metric.yml",
+        "percentiles agg not supported",
+    ),
+    (
+        "search.aggregation/180_percentiles_tdigest_metric_unsigned.yml",
+        "percentiles agg not supported",
+    ),
+    (
+        "search.aggregation/190_percentiles_hdr_metric.yml",
+        "percentiles_hdr agg not supported",
+    ),
+    (
+        "search.aggregation/190_percentiles_hdr_metric_unsigned.yml",
+        "percentiles_hdr agg not supported",
+    ),
+    (
+        "search.aggregation/200_top_hits_metric.yml",
+        "top_hits agg not supported",
+    ),
+    (
+        "search.aggregation/220_filters_bucket.yml",
+        "filters agg not supported",
+    ),
+    (
+        "search.aggregation/220_filters_bucket_unsigned.yml",
+        "filters agg not supported",
+    ),
+    (
+        "search.aggregation/230_composite.yml",
+        "composite agg not supported",
+    ),
+    (
+        "search.aggregation/230_composite_unsigned.yml",
+        "composite agg not supported",
+    ),
+    (
+        "search.aggregation/240_max_buckets.yml",
+        "max_buckets not supported",
+    ),
+    (
+        "search.aggregation/260_weighted_avg.yml",
+        "weighted_avg agg not supported",
+    ),
+    (
+        "search.aggregation/260_weighted_avg_unsigned.yml",
+        "weighted_avg agg not supported",
+    ),
+    (
+        "search.aggregation/270_median_absolute_deviation_metric_unsigned.yml",
+        "median_absolute_deviation agg not supported",
+    ),
+    (
+        "search.aggregation/280_rare_terms.yml",
+        "rare_terms agg not supported",
+    ),
+    (
+        "search.aggregation/300_pipeline.yml",
+        "pipeline agg not supported",
+    ),
+    (
+        "search.aggregation/30_sig_terms_field_match_only_text.yml",
+        "sig_terms + match_only_text not supported",
+    ),
+    (
+        "search.aggregation/310_date_agg_per_day_of_week.yml",
+        "date agg not supported",
+    ),
+    (
+        "search.aggregation/320_missing.yml",
+        "missing agg not supported",
+    ),
+    (
+        "search.aggregation/330_auto_date_histogram.yml",
+        "auto_date_histogram agg not supported",
+    ),
+    (
+        "search.aggregation/340_geo_distance.yml",
+        "geo_distance agg not supported",
+    ),
+    (
+        "search.aggregation/350_variable_width_histogram.yml",
+        "variable_width_histogram agg not supported",
+    ),
+    (
+        "search.aggregation/360_date_histogram.yml",
+        "date_histogram agg not supported",
+    ),
+    (
+        "search.aggregation/370_multi_terms.yml",
+        "multi_terms agg not supported",
+    ),
+    (
+        "search.aggregation/380_doc_count_field.yml",
+        "doc_count_field not supported",
+    ),
+    (
+        "search.aggregation/400_inner_hits.yml",
+        "inner_hits agg not supported",
+    ),
+    (
+        "search.aggregation/410_nested_aggs.yml",
+        "nested agg not supported",
+    ),
+    (
+        "search.aggregation/80_typed_keys_unsigned.yml",
+        "unsigned_long not supported",
     ),
 ];
 

@@ -65,19 +65,6 @@ impl FieldType {
         matches!(self, FieldType::Text)
     }
 
-    pub fn is_numeric(&self) -> bool {
-        matches!(
-            self,
-            FieldType::Long
-                | FieldType::Integer
-                | FieldType::Short
-                | FieldType::Byte
-                | FieldType::Float
-                | FieldType::Double
-                | FieldType::HalfFloat
-        )
-    }
-
     pub fn sqlite_type(&self) -> &str {
         match self {
             FieldType::Text

@@ -71,7 +71,7 @@ async fn search_inner(
                 let defs = reader::parse_aggs(aggs_val);
                 if !defs.is_empty() {
                     let mut empty_aggs = HashMap::new();
-                    for (name, _) in &defs {
+                    for name in defs.keys() {
                         empty_aggs.insert(
                             name.clone(),
                             AggregationResult {
@@ -105,7 +105,7 @@ async fn search_inner(
     }
 
     // Parse aggregations if present
-    let agg_defs = req.aggs.as_ref().map(|a| reader::parse_aggs(a));
+    let agg_defs = req.aggs.as_ref().map(reader::parse_aggs);
     let typed_keys = params.typed_keys.unwrap_or(false);
 
     // Single index - direct path (no need for merge)
@@ -324,7 +324,7 @@ fn apply_typed_keys(
     aggs.into_iter()
         .map(|(name, result)| {
             let prefixed = if result.buckets.is_some() {
-                format!("sterms#{}", name)
+                format!("sterms#{name}")
             } else {
                 name
             };

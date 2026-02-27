@@ -185,8 +185,7 @@ fn parse_bool(value: &serde_json::Value) -> Result<Query, EsError> {
             Some(serde_json::Value::Array(arr)) => arr.iter().map(parse_query).collect(),
             Some(val) if val.is_object() => Ok(vec![parse_query(val)?]),
             Some(_) => Err(EsError::ParsingError(format!(
-                "bool.{} must be an array or object",
-                key
+                "bool.{key} must be an array or object"
             ))),
             None => Ok(vec![]),
         }
@@ -386,10 +385,10 @@ fn parse_wrapper(value: &serde_json::Value) -> Result<Query, EsError> {
     use base64::Engine;
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(encoded.as_bytes())
-        .map_err(|e| EsError::ParsingError(format!("wrapper query base64 decode error: {}", e)))?;
+        .map_err(|e| EsError::ParsingError(format!("wrapper query base64 decode error: {e}")))?;
 
     let inner: serde_json::Value = serde_json::from_slice(&decoded)
-        .map_err(|e| EsError::ParsingError(format!("wrapper query JSON parse error: {}", e)))?;
+        .map_err(|e| EsError::ParsingError(format!("wrapper query JSON parse error: {e}")))?;
 
     parse_query(&inner)
 }

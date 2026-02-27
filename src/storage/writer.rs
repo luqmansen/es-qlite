@@ -84,7 +84,7 @@ pub async fn index_document(
         for (key, field) in &mapping.properties {
             if !field.field_type.is_text() && field.field_type != FieldType::Object {
                 if let Some(value) = map.get(key) {
-                    extra_cols.push(format!("\"{}\"", key));
+                    extra_cols.push(format!("\"{key}\""));
                     match &field.field_type {
                         FieldType::Boolean => {
                             let v = value.as_bool().unwrap_or(false) as i64;
@@ -136,7 +136,7 @@ pub async fn index_document(
                 .collect::<Vec<_>>();
             cols.extend(extra_cols.iter().cloned());
 
-            let placeholders: Vec<String> = (1..=cols.len()).map(|i| format!("?{}", i)).collect();
+            let placeholders: Vec<String> = (1..=cols.len()).map(|i| format!("?{i}")).collect();
 
             let sql = format!(
                 "INSERT OR REPLACE INTO _source ({}) VALUES ({})",

@@ -78,7 +78,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
             if field_type.is_text() && mapping.properties.contains_key(base_field) {
                 let terms: Vec<String> = q
                     .split_whitespace()
-                    .map(|t| escape_fts(t))
+                    .map(escape_fts)
                     .filter(|t| !t.is_empty())
                     .collect();
                 if !terms.is_empty() {
@@ -92,7 +92,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 }
             } else if field_type.is_text() {
                 // Field not in mapping, use LIKE on _source
-                let fref = format!("json_extract(_source, '$.{}')", field);
+                let fref = format!("json_extract(_source, '$.{field}')");
                 let where_expr = format!("{} LIKE '%{}%'", fref, escape_sql(q));
                 append_where(&mut result.where_clause, &where_expr, "AND");
             } else {
@@ -256,7 +256,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
 
             let terms: Vec<String> = q
                 .split_whitespace()
-                .map(|t| escape_fts(t))
+                .map(escape_fts)
                 .filter(|t| !t.is_empty())
                 .collect();
 
@@ -287,7 +287,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
         }
         Query::Exists { field } => {
             let fref = field_ref(field, mapping);
-            let where_expr = format!("{} IS NOT NULL", fref);
+            let where_expr = format!("{fref} IS NOT NULL");
             append_where(&mut result.where_clause, &where_expr, "AND");
         }
         Query::MatchNone => {
@@ -311,7 +311,7 @@ fn translate_inner(query: &Query, mapping: &IndexMapping, result: &mut Translate
                 if !fts_expr.is_empty() && !text_fields.is_empty() {
                     result.has_fts = true;
                     let col_filter = text_fields.join(" ");
-                    let full_fts = format!("{{{}}}: ({})", col_filter, fts_expr);
+                    let full_fts = format!("{{{col_filter}}}: ({fts_expr})");
                     append_fts(&mut result.fts_match, &full_fts, "AND");
                     return;
                 }
@@ -365,7 +365,7 @@ fn append_fts(existing: &mut String, new: &str, joiner: &str) {
     if existing.is_empty() {
         *existing = new.to_string();
     } else {
-        *existing = format!("{} {} {}", existing, joiner, new);
+        *existing = format!("{existing} {joiner} {new}");
     }
 }
 
@@ -373,7 +373,7 @@ fn append_where(existing: &mut String, new: &str, joiner: &str) {
     if existing.is_empty() {
         *existing = new.to_string();
     } else {
-        *existing = format!("{} {} {}", existing, joiner, new);
+        *existing = format!("{existing} {joiner} {new}");
     }
 }
 
@@ -386,10 +386,10 @@ fn field_ref(field: &str, mapping: &IndexMapping) -> String {
     let field_base = field.split('.').next().unwrap_or(field);
     if let Some(fm) = mapping.properties.get(field_base) {
         if !fm.field_type.is_text() && fm.field_type != FieldType::Object {
-            return format!("\"{}\"", field);
+            return format!("\"{field}\"");
         }
     }
-    format!("json_extract(_source, '$.{}')", field)
+    format!("json_extract(_source, '$.{field}')")
 }
 
 /// Strip boost suffix from field names (e.g. "name^5" -> "name")
@@ -430,7 +430,7 @@ fn compute_bm25_weights(field_boosts: &[(&str, f64)], mapping: &IndexMapping) ->
         .iter()
         .map(|col| {
             let w = boost_map.get(col.as_str()).copied().unwrap_or(1.0);
-            format!("{:.1}", w)
+            format!("{w:.1}")
         })
         .collect();
 
@@ -515,16 +515,16 @@ fn escape_fts(term: &str) -> String {
     // Split on these to get individual tokens, and add prefix wildcard (*)
     // to each so partial terms match (e.g. "entitylin" matches "entitylink").
     let parts: Vec<&str> = stripped
-        .split(|c: char| c == '_' || c == '-')
+        .split(['_', '-'])
         .filter(|s| !s.is_empty())
         .collect();
     if parts.len() > 1 {
         // Multiple tokens: use NEAR/0 for adjacency (like phrase match) with prefix wildcards
-        let tokens: Vec<String> = parts.iter().map(|p| format!("\"{}\"*", p)).collect();
+        let tokens: Vec<String> = parts.iter().map(|p| format!("\"{p}\"*")).collect();
         return tokens.join(" ");
     }
     // Single token: quote it and add prefix wildcard for partial matching
-    format!("\"{}\"*", stripped)
+    format!("\"{stripped}\"*")
 }
 
 fn escape_sql(s: &str) -> String {

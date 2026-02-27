@@ -413,7 +413,7 @@ fn execute_terms_agg(
     field: &str,
     size: usize,
 ) -> Result<Vec<AggBucket>, rusqlite::Error> {
-    let field_expr = format!("json_extract(_source, '$.{}')", field);
+    let field_expr = format!("json_extract(_source, '$.{field}')");
 
     let (from_clause, base_where) = if translated.has_fts {
         let where_extra = if translated.where_clause.is_empty() {
@@ -446,15 +446,11 @@ fn execute_terms_agg(
 
     // Try simple GROUP BY first (works for scalar fields - most common case)
     let simple_sql = format!(
-        "SELECT {fe} as _key, COUNT(*) as _count \
-         FROM {from} {where} AND {fe} IS NOT NULL \
+        "SELECT {field_expr} as _key, COUNT(*) as _count \
+         FROM {from_clause} {where_prefix} AND {field_expr} IS NOT NULL \
          GROUP BY _key \
          ORDER BY _count DESC \
          LIMIT {size}",
-        fe = field_expr,
-        from = from_clause,
-        where = where_prefix,
-        size = size,
     );
 
     tracing::debug!("Aggregation SQL for '{}': {}", field, simple_sql);
@@ -492,15 +488,11 @@ fn execute_terms_agg(
     if has_array_values {
         let array_sql = format!(
             "SELECT je.value as _key, COUNT(*) as _count \
-             FROM {from}, json_each({fe}) je \
-             {where} AND je.value IS NOT NULL \
+             FROM {from_clause}, json_each({field_expr}) je \
+             {where_prefix} AND je.value IS NOT NULL \
              GROUP BY je.value \
              ORDER BY _count DESC \
              LIMIT {size}",
-            fe = field_expr,
-            from = from_clause,
-            where = where_prefix,
-            size = size,
         );
 
         tracing::debug!("Aggregation SQL (array) for '{}': {}", field, array_sql);
@@ -587,7 +579,7 @@ fn build_search_sql(
         let clauses: Vec<String> = translated
             .sort_clauses
             .iter()
-            .map(|(field, dir)| format!("{} {}", field, dir))
+            .map(|(field, dir)| format!("{field} {dir}"))
             .collect();
         format!("ORDER BY {}", clauses.join(", "))
     } else if translated.has_fts {
@@ -637,13 +629,12 @@ fn build_search_sql(
 
         let sql = format!(
             "SELECT _id, _source, 1.0 as _score \
-             FROM _source{} \
-             {} \
-             LIMIT {} OFFSET {}",
-            where_clause, order_by, size, from,
+             FROM _source{where_clause} \
+             {order_by} \
+             LIMIT {size} OFFSET {from}",
         );
 
-        let count_sql = format!("SELECT COUNT(*) FROM _source{}", where_clause,);
+        let count_sql = format!("SELECT COUNT(*) FROM _source{where_clause}",);
 
         (sql, count_sql, params)
     }

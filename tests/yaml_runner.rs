@@ -3,6 +3,7 @@
 //! Runs a subset of the OpenSearch/Elasticsearch YAML test specs against a live
 //! es-sqlite server. The server is started automatically.
 //!
+#![allow(clippy::await_holding_lock, dead_code)]
 //! Run with:
 //!   cargo test --test yaml_runner
 
@@ -292,7 +293,7 @@ fn values_match(actual: &Value, expected: &Value) -> bool {
         (Value::Object(a), Value::Object(b)) => {
             // Expected should be a subset of actual
             b.iter()
-                .all(|(k, v)| a.get(k).map_or(false, |av| values_match(av, v)))
+                .all(|(k, v)| a.get(k).is_some_and(|av| values_match(av, v)))
         }
         _ => actual == expected,
     }
@@ -378,7 +379,7 @@ async fn run_yaml_test_file(base_url: &str, path: &PathBuf) -> Vec<(String, Resu
         };
 
         // Check for setup section
-        if let Some(setup) = map.get(&YamlValue::String("setup".to_string())) {
+        if let Some(setup) = map.get(YamlValue::String("setup".to_string())) {
             if let YamlValue::Sequence(ops) = setup {
                 setup_ops = ops.clone();
             }

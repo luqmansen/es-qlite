@@ -59,7 +59,7 @@ fn ensure_opensearch_sync() -> Option<String> {
             "--name",
             CONTAINER_NAME,
             "-p",
-            &format!("{}:9200", port),
+            &format!("{port}:9200"),
             "-e",
             "discovery.type=single-node",
             "-e",
@@ -74,7 +74,7 @@ fn ensure_opensearch_sync() -> Option<String> {
 
     match result {
         Ok(output) if output.status.success() => {
-            eprintln!("Started OpenSearch container on port {}", port);
+            eprintln!("Started OpenSearch container on port {port}");
         }
         Ok(output) => {
             eprintln!(
@@ -84,13 +84,13 @@ fn ensure_opensearch_sync() -> Option<String> {
             return None;
         }
         Err(e) => {
-            eprintln!("Failed to run docker: {}", e);
+            eprintln!("Failed to run docker: {e}");
             return None;
         }
     }
 
     // Wait for OpenSearch to be ready using curl (avoids reqwest::blocking runtime issues)
-    let url = format!("http://127.0.0.1:{}", port);
+    let url = format!("http://127.0.0.1:{port}");
 
     for i in 0..120 {
         let check = Command::new("curl")
@@ -98,7 +98,7 @@ fn ensure_opensearch_sync() -> Option<String> {
             .output();
         if let Ok(output) = check {
             if output.status.success() {
-                eprintln!("OpenSearch ready after ~{}s", i);
+                eprintln!("OpenSearch ready after ~{i}s");
                 return Some(url);
             }
         }
@@ -114,7 +114,7 @@ fn ensure_opensearch_sync() -> Option<String> {
 
 fn get_opensearch_url() -> Option<&'static str> {
     OPENSEARCH_URL
-        .get_or_init(|| ensure_opensearch_sync())
+        .get_or_init(ensure_opensearch_sync)
         .as_deref()
 }
 
@@ -139,11 +139,11 @@ fn http() -> Client {
 
 async fn create_index(base: &str, index: &str, mappings: Value) {
     let client = http();
-    let _ = client.delete(format!("{}/{}", base, index)).send().await;
+    let _ = client.delete(format!("{base}/{index}")).send().await;
     // Small delay for OpenSearch to process delete
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let resp = client
-        .put(format!("{}/{}", base, index))
+        .put(format!("{base}/{index}"))
         .json(&json!({ "mappings": mappings }))
         .send()
         .await
@@ -160,7 +160,7 @@ async fn create_index(base: &str, index: &str, mappings: Value) {
 async fn index_doc(base: &str, index: &str, id: &str, doc: Value) {
     let client = http();
     let resp = client
-        .put(format!("{}/{}/_doc/{}", base, index, id))
+        .put(format!("{base}/{index}/_doc/{id}"))
         .json(&doc)
         .send()
         .await
@@ -171,7 +171,7 @@ async fn index_doc(base: &str, index: &str, id: &str, doc: Value) {
 async fn refresh(base: &str, index: &str) {
     let client = http();
     client
-        .post(format!("{}/{}/_refresh", base, index))
+        .post(format!("{base}/{index}/_refresh"))
         .send()
         .await
         .expect("refresh");
@@ -180,16 +180,14 @@ async fn refresh(base: &str, index: &str) {
 async fn search(base: &str, index: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_search", base, index))
+        .post(format!("{base}/{index}/_search"))
         .json(&body)
         .send()
         .await
         .expect("search");
     assert!(
         resp.status().is_success(),
-        "Search failed on {}/{}",
-        base,
-        index
+        "Search failed on {base}/{index}"
     );
     resp.json().await.expect("parse json")
 }
@@ -197,7 +195,7 @@ async fn search(base: &str, index: &str, body: Value) -> Value {
 async fn search_with_params(base: &str, index: &str, params: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_search?{}", base, index, params))
+        .post(format!("{base}/{index}/_search?{params}"))
         .json(&body)
         .send()
         .await
@@ -209,7 +207,7 @@ async fn search_with_params(base: &str, index: &str, params: &str, body: Value) 
 async fn count(base: &str, index: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_count", base, index))
+        .post(format!("{base}/{index}/_count"))
         .json(&body)
         .send()
         .await
@@ -221,7 +219,7 @@ async fn count(base: &str, index: &str, body: Value) -> Value {
 async fn cleanup(base: &str, indices: &[&str]) {
     let client = http();
     for idx in indices {
-        let _ = client.delete(format!("{}/{}", base, idx)).send().await;
+        let _ = client.delete(format!("{base}/{idx}")).send().await;
     }
 }
 
@@ -321,8 +319,7 @@ fn value_type_name(v: &Value) -> &'static str {
 fn assert_same_value(es: &Value, os: &Value, field: &str) {
     assert_eq!(
         es, os,
-        "Value mismatch for '{}': es-sqlite={}, opensearch={}",
-        field, es, os
+        "Value mismatch for '{field}': es-sqlite={es}, opensearch={os}"
     );
 }
 
@@ -342,8 +339,7 @@ fn assert_same_ranking(es_body: &Value, os_body: &Value) {
         .collect();
     assert_eq!(
         es_ids, os_ids,
-        "Ranking mismatch:\n  es-sqlite:   {:?}\n  opensearch:  {:?}",
-        es_ids, os_ids
+        "Ranking mismatch:\n  es-sqlite:   {es_ids:?}\n  opensearch:  {os_ids:?}"
     );
 }
 
@@ -386,8 +382,7 @@ fn assert_similar_ranking(es_body: &Value, os_body: &Value, top_n: usize, min_ov
     // If all IDs overlap but order differs, log it (BM25 tie-breaking may differ)
     if overlap == max_len && es_ids != os_ids {
         eprintln!(
-            "  Note: Same IDs, different order (BM25 tie-breaking):\n    es-sqlite:   {:?}\n    opensearch:  {:?}",
-            es_ids, os_ids
+            "  Note: Same IDs, different order (BM25 tie-breaking):\n    es-sqlite:   {es_ids:?}\n    opensearch:  {os_ids:?}"
         );
     }
 }
@@ -396,10 +391,10 @@ fn assert_similar_ranking(es_body: &Value, os_body: &Value, top_n: usize, min_ov
 fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
     let es_buckets = es_agg["buckets"]
         .as_array()
-        .unwrap_or_else(|| panic!("es-sqlite: no buckets array in agg '{}'", agg_name));
+        .unwrap_or_else(|| panic!("es-sqlite: no buckets array in agg '{agg_name}'"));
     let os_buckets = os_agg["buckets"]
         .as_array()
-        .unwrap_or_else(|| panic!("opensearch: no buckets array in agg '{}'", agg_name));
+        .unwrap_or_else(|| panic!("opensearch: no buckets array in agg '{agg_name}'"));
 
     assert_eq!(
         es_buckets.len(),
@@ -422,8 +417,7 @@ fn assert_same_buckets(es_agg: &Value, os_agg: &Value, agg_name: &str) {
 
     assert_eq!(
         es_map, os_map,
-        "Bucket values mismatch for '{}':\n  es-sqlite:   {:?}\n  opensearch:  {:?}",
-        agg_name, es_map, os_map
+        "Bucket values mismatch for '{agg_name}':\n  es-sqlite:   {es_map:?}\n  opensearch:  {os_map:?}"
     );
 }
 
@@ -525,11 +519,10 @@ async fn compare_structure_search_hits() {
         let os_hit = os_hits
             .iter()
             .find(|h| h["_id"].as_str().unwrap() == id)
-            .unwrap_or_else(|| panic!("OpenSearch missing hit with _id={}", id));
+            .unwrap_or_else(|| panic!("OpenSearch missing hit with _id={id}"));
         assert_eq!(
             es_hit["_source"], os_hit["_source"],
-            "_source mismatch for _id={}",
-            id
+            "_source mismatch for _id={id}"
         );
     }
 
@@ -1395,8 +1388,7 @@ async fn compare_corpus_sort_and_pagination() {
     for id in &p1_ids {
         assert!(
             !p2_ids.contains(id),
-            "Page overlap: {} appears in both pages",
-            id
+            "Page overlap: {id} appears in both pages"
         );
     }
 
@@ -1411,7 +1403,7 @@ const CACHE_PATH: &str = "tests/.cache/gutenberg_corpus.json";
 async fn load_or_download_corpus() -> Vec<(String, Value)> {
     let cache = Path::new(CACHE_PATH);
     if cache.exists() {
-        eprintln!("Loading cached Gutenberg corpus from {}", CACHE_PATH);
+        eprintln!("Loading cached Gutenberg corpus from {CACHE_PATH}");
         let data = std::fs::read_to_string(cache).expect("read cache");
         let docs: Vec<Value> = serde_json::from_str(&data).expect("parse cache");
         return docs
@@ -1445,16 +1437,14 @@ async fn download_gutenberg_corpus() -> Vec<(String, Value)> {
     let pages = 16; // 32 books/page = ~512 books
 
     for page in 1..=pages {
-        let url = format!(
-            "https://gutendex.com/books/?page={}&languages=en&mime_type=text%2Fplain",
-            page
-        );
-        eprintln!("  Fetching page {}/{}...", page, pages);
+        let url =
+            format!("https://gutendex.com/books/?page={page}&languages=en&mime_type=text%2Fplain");
+        eprintln!("  Fetching page {page}/{pages}...");
 
         let resp = match client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("  Failed to fetch page {}: {}", page, e);
+                eprintln!("  Failed to fetch page {page}: {e}");
                 continue;
             }
         };
@@ -1462,7 +1452,7 @@ async fn download_gutenberg_corpus() -> Vec<(String, Value)> {
         let body: Value = match resp.json().await {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("  Failed to parse page {}: {}", page, e);
+                eprintln!("  Failed to parse page {page}: {e}");
                 continue;
             }
         };
@@ -1656,15 +1646,14 @@ async fn bulk_index(base: &str, index: &str, docs: &[(String, Value)]) {
         let mut ndjson = String::new();
         for (id, doc) in chunk {
             ndjson.push_str(&format!(
-                "{{\"index\":{{\"_index\":\"{}\",\"_id\":\"{}\"}}}}\n",
-                index, id
+                "{{\"index\":{{\"_index\":\"{index}\",\"_id\":\"{id}\"}}}}\n"
             ));
             ndjson.push_str(&serde_json::to_string(doc).unwrap());
             ndjson.push('\n');
         }
 
         let resp = client
-            .post(format!("{}/_bulk", base))
+            .post(format!("{base}/_bulk"))
             .header("Content-Type", "application/x-ndjson")
             .body(ndjson)
             .send()
@@ -1728,7 +1717,7 @@ async fn compare_gutenberg_ranking() {
         return;
     }
     let doc_count = docs.len();
-    eprintln!("Testing with {} Gutenberg books", doc_count);
+    eprintln!("Testing with {doc_count} Gutenberg books");
 
     setup_both_gutenberg(es, os, idx, gutenberg_mappings(), &docs).await;
 
@@ -1747,10 +1736,7 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!(
-        "  'love and marriage': es-sqlite={} hits, OpenSearch={} hits",
-        es_total, os_total
-    );
+    eprintln!("  'love and marriage': es-sqlite={es_total} hits, OpenSearch={os_total} hits");
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     // Query 2: Adventure theme
@@ -1759,10 +1745,7 @@ async fn compare_gutenberg_ranking() {
     let os_body = search(os, idx, query).await;
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
-    eprintln!(
-        "  'adventure sea voyage': es-sqlite={} hits, OpenSearch={} hits",
-        es_total, os_total
-    );
+    eprintln!("  'adventure sea voyage': es-sqlite={es_total} hits, OpenSearch={os_total} hits");
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
     // Query 3: Multi-match across title and body
@@ -1775,8 +1758,7 @@ async fn compare_gutenberg_ranking() {
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     eprintln!(
-        "  'war and peace' (multi_match): es-sqlite={} hits, OpenSearch={} hits",
-        es_total, os_total
+        "  'war and peace' (multi_match): es-sqlite={es_total} hits, OpenSearch={os_total} hits"
     );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
@@ -1795,8 +1777,7 @@ async fn compare_gutenberg_ranking() {
     let es_total = es_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     let os_total = os_body["hits"]["total"]["value"].as_i64().unwrap_or(0);
     eprintln!(
-        "  'science discovery nature' (bool+filter): es-sqlite={} hits, OpenSearch={} hits",
-        es_total, os_total
+        "  'science discovery nature' (bool+filter): es-sqlite={es_total} hits, OpenSearch={os_total} hits"
     );
     assert_similar_ranking(&es_body, &os_body, 10, 0.6);
 
@@ -1930,6 +1911,6 @@ fn z_cleanup_docker_container() {
         let _ = Command::new("docker")
             .args(["rm", "-f", CONTAINER_NAME])
             .output();
-        eprintln!("Cleaned up Docker container: {}", CONTAINER_NAME);
+        eprintln!("Cleaned up Docker container: {CONTAINER_NAME}");
     }
 }

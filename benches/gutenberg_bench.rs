@@ -9,6 +9,7 @@
 //!
 //! Requires Docker for OpenSearch. If Docker is unavailable, only es-sqlite
 //! is benchmarked.
+#![allow(clippy::type_complexity)]
 
 use futures::stream::{self, StreamExt};
 use reqwest::Client;
@@ -45,10 +46,14 @@ fn start_es_sqlite() -> String {
     std::fs::create_dir_all(&data_dir).ok();
 
     let binary = format!("{}/target/release/es-sqlite", env!("CARGO_MANIFEST_DIR"));
-    let _child = Command::new(&binary)
+    let mut child = Command::new(&binary)
         .args(["--port", "19222", "--data-dir", &data_dir])
         .spawn()
         .expect("start es-sqlite");
+    // Detach so cleanup_servers() handles termination via pkill
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
 
     // Wait for it to be ready
     let url = "http://127.0.0.1:19222";
@@ -88,7 +93,7 @@ fn start_opensearch() -> Option<String> {
             "--name",
             CONTAINER_NAME,
             "-p",
-            &format!("{}:9200", port),
+            &format!("{port}:9200"),
             "-e",
             "discovery.type=single-node",
             "-e",
@@ -103,7 +108,7 @@ fn start_opensearch() -> Option<String> {
 
     match result {
         Ok(output) if output.status.success() => {
-            eprintln!("Started OpenSearch on port {}", port);
+            eprintln!("Started OpenSearch on port {port}");
         }
         _ => {
             eprintln!("Failed to start OpenSearch container");
@@ -111,14 +116,14 @@ fn start_opensearch() -> Option<String> {
         }
     }
 
-    let url = format!("http://127.0.0.1:{}", port);
+    let url = format!("http://127.0.0.1:{port}");
     for i in 0..120 {
         let check = Command::new("curl")
             .args(["-sf", "--max-time", "2", &url])
             .output();
         if let Ok(output) = check {
             if output.status.success() {
-                eprintln!("OpenSearch ready after ~{}s", i);
+                eprintln!("OpenSearch ready after ~{i}s");
                 return Some(url);
             }
         }
@@ -155,25 +160,21 @@ fn http() -> Client {
 
 async fn create_index(base: &str, index: &str, mappings: Value) {
     let client = http();
-    let _ = client.delete(format!("{}/{}", base, index)).send().await;
+    let _ = client.delete(format!("{base}/{index}")).send().await;
     tokio::time::sleep(Duration::from_millis(100)).await;
     let resp = client
-        .put(format!("{}/{}", base, index))
+        .put(format!("{base}/{index}"))
         .json(&json!({ "mappings": mappings }))
         .send()
         .await
         .expect("create index");
-    assert!(
-        resp.status().is_success(),
-        "create index failed on {}",
-        base
-    );
+    assert!(resp.status().is_success(), "create index failed on {base}");
 }
 
 async fn refresh(base: &str, index: &str) {
     let client = http();
     client
-        .post(format!("{}/{}/_refresh", base, index))
+        .post(format!("{base}/{index}/_refresh"))
         .send()
         .await
         .expect("refresh");
@@ -182,18 +183,18 @@ async fn refresh(base: &str, index: &str) {
 async fn search(base: &str, index: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_search", base, index))
+        .post(format!("{base}/{index}/_search"))
         .json(&body)
         .send()
         .await
         .expect("search");
-    assert!(resp.status().is_success(), "search failed on {}", base);
+    assert!(resp.status().is_success(), "search failed on {base}");
     resp.json().await.expect("parse")
 }
 
 async fn cleanup(base: &str, index: &str) {
     let client = http();
-    let _ = client.delete(format!("{}/{}", base, index)).send().await;
+    let _ = client.delete(format!("{base}/{index}")).send().await;
 }
 
 async fn bulk_index(base: &str, index: &str, docs: &[(String, Value)]) {
@@ -204,14 +205,13 @@ async fn bulk_index(base: &str, index: &str, docs: &[(String, Value)]) {
         let mut ndjson = String::new();
         for (id, doc) in chunk {
             ndjson.push_str(&format!(
-                "{{\"index\":{{\"_index\":\"{}\",\"_id\":\"{}\"}}}}\n",
-                index, id
+                "{{\"index\":{{\"_index\":\"{index}\",\"_id\":\"{id}\"}}}}\n"
             ));
             ndjson.push_str(&serde_json::to_string(doc).unwrap());
             ndjson.push('\n');
         }
         let resp = client
-            .post(format!("{}/_bulk", base))
+            .post(format!("{base}/_bulk"))
             .header("Content-Type", "application/x-ndjson")
             .body(ndjson)
             .send()
@@ -273,16 +273,14 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
     let pages = 16;
 
     for page in 1..=pages {
-        let url = format!(
-            "https://gutendex.com/books/?page={}&languages=en&mime_type=text%2Fplain",
-            page
-        );
-        eprintln!("  Fetching page {}/{}...", page, pages);
+        let url =
+            format!("https://gutendex.com/books/?page={page}&languages=en&mime_type=text%2Fplain");
+        eprintln!("  Fetching page {page}/{pages}...");
 
         let resp = match client.get(&url).send().await {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("  Failed page {}: {}", page, e);
+                eprintln!("  Failed page {page}: {e}");
                 continue;
             }
         };
@@ -355,10 +353,7 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
     }
 
     let total = all_books.len();
-    eprintln!(
-        "  Fetched metadata for {} books, downloading texts (5 workers)...",
-        total
-    );
+    eprintln!("  Fetched metadata for {total} books, downloading texts (5 workers)...");
 
     // Phase 2: Download texts with 5 concurrent workers, writing each to disk immediately
     std::fs::create_dir_all(CACHE_DIR).expect("create cache dir");
@@ -401,14 +396,14 @@ async fn download_gutenberg_corpus() -> Vec<Value> {
                 });
 
                 // Write to disk immediately
-                let path = Path::new(CACHE_DIR).join(format!("book_{:04}.json", i));
+                let path = Path::new(CACHE_DIR).join(format!("book_{i:04}.json"));
                 if let Ok(data) = serde_json::to_string(&doc) {
                     let _ = std::fs::write(&path, data);
                 }
 
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 if done % 50 == 0 {
-                    eprintln!("  Downloaded {}/{}...", done, total);
+                    eprintln!("  Downloaded {done}/{total}...");
                 }
 
                 Some(doc)
@@ -553,8 +548,7 @@ fn print_step_header(body_size: &str, doc_count: usize) {
     eprintln!();
     eprintln!("┌───────────────────────────────────────────────────────────────────────────┐");
     eprintln!(
-        "│  Body size: {:>6}  |  Documents: {:>4}                                     │",
-        body_size, doc_count
+        "│  Body size: {body_size:>6}  |  Documents: {doc_count:>4}                                     │"
     );
     eprintln!("├───────────────────────┬──────────────┬──────────────┬────────────────────┤");
     eprintln!("│ Query                 │ es-sqlite    │ OpenSearch   │ Ratio              │");
@@ -563,7 +557,7 @@ fn print_step_header(body_size: &str, doc_count: usize) {
 
 fn print_result(r: &BenchResult) {
     let os_str = match r.os_avg_us {
-        Some(us) => format!("{:>8} µs", us),
+        Some(us) => format!("{us:>8} µs"),
         None => "      N/A".to_string(),
     };
     let ratio_str = match r.os_avg_us {
@@ -572,7 +566,7 @@ fn print_result(r: &BenchResult) {
             if ratio < 1.0 {
                 format!("{:>5.1}x faster ⚡", 1.0 / ratio)
             } else {
-                format!("{:>5.1}x slower   ", ratio)
+                format!("{ratio:>5.1}x slower   ")
             }
         }
         _ => "                ".to_string(),
@@ -585,7 +579,7 @@ fn print_result(r: &BenchResult) {
 
 fn print_index_time(label: &str, es_ms: u128, os_ms: Option<u128>) {
     let os_str = match os_ms {
-        Some(ms) => format!("{:>8} ms", ms),
+        Some(ms) => format!("{ms:>8} ms"),
         None => "      N/A".to_string(),
     };
     let ratio_str = match os_ms {
@@ -594,16 +588,13 @@ fn print_index_time(label: &str, es_ms: u128, os_ms: Option<u128>) {
             if ratio < 1.0 {
                 format!("{:>5.1}x faster ⚡", 1.0 / ratio)
             } else {
-                format!("{:>5.1}x slower   ", ratio)
+                format!("{ratio:>5.1}x slower   ")
             }
         }
         _ => "                ".to_string(),
     };
     eprintln!("├───────────────────────┼──────────────┼──────────────┼────────────────────┤");
-    eprintln!(
-        "│ {:<21} │ {:>8} ms  │ {}  │ {} │",
-        label, es_ms, os_str, ratio_str
-    );
+    eprintln!("│ {label:<21} │ {es_ms:>8} ms  │ {os_str}  │ {ratio_str} │");
 }
 
 fn print_step_footer() {
@@ -701,7 +692,7 @@ fn main() {
         eprintln!("═══════════════════════════════════════════════════════════════");
 
         let es_url = start_es_sqlite();
-        eprintln!("es-sqlite ready at {}", es_url);
+        eprintln!("es-sqlite ready at {es_url}");
 
         // es_results[step_idx] = (label, index_ms, [(query_name, avg_us)])
         let mut es_results: Vec<(String, u128, Vec<(String, u128)>)> = Vec::new();
@@ -736,7 +727,7 @@ fn main() {
                 bench_queries_single(&es_url, &idx, &queries, iterations).await;
 
             for (name, avg) in &query_results {
-                eprintln!("    {:<21} {:>8} µs", name, avg);
+                eprintln!("    {name:<21} {avg:>8} µs");
             }
             eprintln!("    {:<21} {:>8} ms", "bulk_index", index_ms);
 
@@ -790,7 +781,7 @@ fn main() {
                 let os_url = match start_opensearch() {
                     Some(url) => url,
                     None => {
-                        eprintln!("    Failed to start OpenSearch, skipping step {}", label);
+                        eprintln!("    Failed to start OpenSearch, skipping step {label}");
                         os_results.push(None);
                         continue;
                     }
@@ -810,7 +801,7 @@ fn main() {
                     bench_queries_single(&os_url, &idx, &queries, iterations).await;
 
                 for (name, avg) in &query_results {
-                    eprintln!("    {:<21} {:>8} µs", name, avg);
+                    eprintln!("    {name:<21} {avg:>8} µs");
                 }
                 eprintln!("    {:<21} {:>8} ms", "bulk_index", index_ms);
 
@@ -871,7 +862,7 @@ fn main() {
             }
 
             print_index_time(
-                &format!("Bulk index ({})", label),
+                &format!("Bulk index ({label})"),
                 *es_index_ms,
                 os_index_ms,
             );
@@ -891,7 +882,7 @@ fn main() {
         // Header row
         eprint!("  {:>18}", "");
         for (label, _) in &summary {
-            eprint!(" │ {:^23}", label);
+            eprint!(" │ {label:^23}");
         }
         eprintln!();
 
@@ -910,7 +901,7 @@ fn main() {
         // Data rows
         if let Some((_, first_results)) = summary.first() {
             for (qi, (qname, _, _)) in first_results.iter().enumerate() {
-                eprint!("  {:>18}", qname);
+                eprint!("  {qname:>18}");
                 for (_, step_results) in &summary {
                     if let Some((_, es, os)) = step_results.get(qi) {
                         let unit = if qname == "bulk_index_ms" {
@@ -919,7 +910,7 @@ fn main() {
                             "µs"
                         };
                         let os_str = match os {
-                            Some(v) => format!("{:>6}{}", v, unit),
+                            Some(v) => format!("{v:>6}{unit}"),
                             None => "     N/A".to_string(),
                         };
                         let ratio = match os {
@@ -928,12 +919,12 @@ fn main() {
                                 if r < 1.0 {
                                     format!("{:.0}x", 1.0 / r)
                                 } else {
-                                    format!("{:.0}x", r)
+                                    format!("{r:.0}x")
                                 }
                             }
                             _ => " - ".to_string(),
                         };
-                        eprint!(" │ {:>6}{} {} {:>3}", es, unit, os_str, ratio);
+                        eprint!(" │ {es:>6}{unit} {os_str} {ratio:>3}");
                     }
                 }
                 eprintln!();
@@ -953,6 +944,6 @@ fn format_bytes(bytes: usize) -> String {
     } else if bytes >= 1_000 {
         format!("{:.1}KB", bytes as f64 / 1_000.0)
     } else {
-        format!("{}B", bytes)
+        format!("{bytes}B")
     }
 }

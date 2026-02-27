@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+echo "Running cargo fmt --check..."
+cargo fmt --check
+if [ $? -ne 0 ]; then
+    echo "Error: cargo fmt check failed. Run 'cargo fmt' to fix."
+    exit 1
+fi
+
+echo "Running cargo clippy..."
+cargo clippy --all-targets -- -D warnings
+if [ $? -ne 0 ]; then
+    echo "Error: clippy found issues."
+    exit 1
+fi
+
+echo "Pre-commit checks passed."

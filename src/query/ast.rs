@@ -1,5 +1,6 @@
 /// Elasticsearch Query DSL AST
 #[derive(Debug, Clone)]
+#[allow(dead_code, clippy::enum_variant_names)]
 pub enum Query {
     MatchAll,
     Match {

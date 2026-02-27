@@ -10,6 +10,7 @@ use crate::error::EsError;
 use crate::model::mapping::{IndexMapping, IndexSettings};
 use crate::storage::{connection, schema};
 
+#[allow(dead_code)]
 pub struct IndexHandle {
     pub name: String,
     pub conn: AsyncConnection,
@@ -277,7 +278,7 @@ impl IndexRegistry {
             return Err(EsError::IndexAlreadyExists(name));
         }
 
-        let db_path = self.data_dir.join(format!("{}.db", name));
+        let db_path = self.data_dir.join(format!("{name}.db"));
         let conn = connection::open_or_create(&db_path)
             .await
             .map_err(|e| EsError::Internal(e.to_string()))?;
@@ -336,25 +337,27 @@ impl IndexRegistry {
         drop(handle);
 
         // Remove the database file
-        let db_path = self.data_dir.join(format!("{}.db", name));
+        let db_path = self.data_dir.join(format!("{name}.db"));
         if db_path.exists() {
             std::fs::remove_file(&db_path).map_err(|e| EsError::Internal(e.to_string()))?;
         }
         // Also remove WAL and SHM files
-        let wal_path = self.data_dir.join(format!("{}.db-wal", name));
-        let shm_path = self.data_dir.join(format!("{}.db-shm", name));
+        let wal_path = self.data_dir.join(format!("{name}.db-wal"));
+        let shm_path = self.data_dir.join(format!("{name}.db-shm"));
         let _ = std::fs::remove_file(wal_path);
         let _ = std::fs::remove_file(shm_path);
 
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn increment_doc_count(&self, name: &str, delta: u64) {
         if let Ok(handle) = self.get(name) {
             handle.doc_count.fetch_add(delta, Ordering::Relaxed);
         }
     }
 
+    #[allow(dead_code)]
     pub fn decrement_doc_count(&self, name: &str, delta: u64) {
         if let Ok(handle) = self.get(name) {
             handle.doc_count.fetch_sub(delta, Ordering::Relaxed);
@@ -396,20 +399,17 @@ fn validate_index_name(name: &str) -> Result<(), EsError> {
     }
     if name.starts_with('_') || name.starts_with('-') || name.starts_with('+') {
         return Err(EsError::InvalidIndexName(format!(
-            "index name [{}] must not start with '_', '-', or '+'",
-            name
+            "index name [{name}] must not start with '_', '-', or '+'"
         )));
     }
     if name != name.to_lowercase() {
         return Err(EsError::InvalidIndexName(format!(
-            "index name [{}] must be lowercase",
-            name
+            "index name [{name}] must be lowercase"
         )));
     }
     if name.contains(['/', '*', '?', '"', '<', '>', '|', ' ', ',', '#', ':']) {
         return Err(EsError::InvalidIndexName(format!(
-            "index name [{}] contains invalid characters",
-            name
+            "index name [{name}] contains invalid characters"
         )));
     }
     Ok(())

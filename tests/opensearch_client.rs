@@ -743,10 +743,10 @@ fn http() -> Client {
 /// Helper: create an index via raw HTTP.
 async fn create_index_raw(base: &str, index: &str, mappings: Value) {
     let client = http();
-    let _ = client.delete(format!("{}/{}", base, index)).send().await;
+    let _ = client.delete(format!("{base}/{index}")).send().await;
 
     let resp = client
-        .put(format!("{}/{}", base, index))
+        .put(format!("{base}/{index}"))
         .json(&json!({ "mappings": mappings }))
         .send()
         .await
@@ -763,7 +763,7 @@ async fn create_index_raw(base: &str, index: &str, mappings: Value) {
 async fn index_doc(base: &str, index: &str, id: &str, doc: Value) {
     let client = http();
     let resp = client
-        .put(format!("{}/{}/_doc/{}", base, index, id))
+        .put(format!("{base}/{index}/_doc/{id}"))
         .json(&doc)
         .send()
         .await
@@ -781,7 +781,7 @@ async fn index_doc(base: &str, index: &str, id: &str, doc: Value) {
 async fn refresh_raw(base: &str, index: &str) {
     let client = http();
     client
-        .post(format!("{}/{}/_refresh", base, index))
+        .post(format!("{base}/{index}/_refresh"))
         .send()
         .await
         .expect("refresh");
@@ -791,7 +791,7 @@ async fn refresh_raw(base: &str, index: &str) {
 async fn search_raw(base: &str, index: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_search", base, index))
+        .post(format!("{base}/{index}/_search"))
         .json(&body)
         .send()
         .await
@@ -809,7 +809,7 @@ async fn search_raw(base: &str, index: &str, body: Value) -> Value {
 async fn search_with_params(base: &str, index: &str, params: &str, body: Value) -> Value {
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_search?{}", base, index, params))
+        .post(format!("{base}/{index}/_search?{params}"))
         .json(&body)
         .send()
         .await
@@ -827,7 +827,7 @@ async fn search_with_params(base: &str, index: &str, params: &str, body: Value) 
 async fn cleanup_raw(base: &str, indices: &[&str]) {
     let client = http();
     for idx in indices {
-        let _ = client.delete(format!("{}/{}", base, idx)).send().await;
+        let _ = client.delete(format!("{base}/{idx}")).send().await;
     }
 }
 
@@ -1188,8 +1188,7 @@ async fn test_aggregations_empty_index_returns_empty_buckets() {
     let client = http();
     let resp = client
         .post(format!(
-            "{}/nonexistent-index-pattern*/_search?typed_keys=true",
-            base
+            "{base}/nonexistent-index-pattern*/_search?typed_keys=true"
         ))
         .json(&json!({
             "size": 0,
@@ -1257,7 +1256,7 @@ async fn test_alias_create_and_search() {
 
     let client = http();
     let resp = client
-        .post(format!("{}/_aliases", base))
+        .post(format!("{base}/_aliases"))
         .json(&json!({
             "actions": [
                 { "add": { "index": idx, "alias": alias } }
@@ -1282,19 +1281,18 @@ async fn test_alias_create_and_search() {
     assert_eq!(body["hits"]["total"]["value"], 1);
 
     let resp = client
-        .get(format!("{}/{}/_alias", base, idx))
+        .get(format!("{base}/{idx}/_alias"))
         .send()
         .await
         .expect("get aliases");
     let body: Value = resp.json().await.unwrap();
     assert!(
         body[idx]["aliases"][alias].is_object(),
-        "Expected alias in response: {:?}",
-        body
+        "Expected alias in response: {body:?}"
     );
 
     let resp = client
-        .post(format!("{}/_aliases", base))
+        .post(format!("{base}/_aliases"))
         .json(&json!({
             "actions": [
                 { "remove": { "index": idx, "alias": alias } }
@@ -1306,7 +1304,7 @@ async fn test_alias_create_and_search() {
     assert!(resp.status().is_success());
 
     let resp = client
-        .post(format!("{}/{}/_search", base, alias))
+        .post(format!("{base}/{alias}/_search"))
         .json(&json!({"query": {"match_all": {}}}))
         .send()
         .await
@@ -1362,7 +1360,7 @@ async fn test_alias_multiple_indices() {
 
     let client = http();
     client
-        .post(format!("{}/_aliases", base))
+        .post(format!("{base}/_aliases"))
         .json(&json!({
             "actions": [
                 { "add": { "index": idx1, "alias": alias } },
@@ -1497,7 +1495,7 @@ async fn test_multi_index_search() {
 
     let body = search_raw(
         base,
-        &format!("{},{}", idx1, idx2),
+        &format!("{idx1},{idx2}"),
         json!({
             "query": { "match": { "title": "rust" } }
         }),
@@ -1593,7 +1591,7 @@ async fn test_delete_by_query() {
 
     let client = http();
     let resp = client
-        .post(format!("{}/{}/_delete_by_query", base, idx))
+        .post(format!("{base}/{idx}/_delete_by_query"))
         .json(&json!({
             "query": {
                 "term": { "status": "inactive" }
@@ -1890,7 +1888,7 @@ async fn test_count_with_query() {
     let client = http();
 
     let resp = client
-        .post(format!("{}/{}/_count", base, idx))
+        .post(format!("{base}/{idx}/_count"))
         .json(&json!({"query": {"match_all": {}}}))
         .send()
         .await
@@ -1899,7 +1897,7 @@ async fn test_count_with_query() {
     assert_eq!(body["count"], 3);
 
     let resp = client
-        .post(format!("{}/{}/_count", base, idx))
+        .post(format!("{base}/{idx}/_count"))
         .json(&json!({
             "query": { "term": { "status": "active" } }
         }))

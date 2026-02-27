@@ -32,7 +32,7 @@ pub fn create_index_tables(
         if field.field_type.is_text() {
             if let Some(fields) = &field.fields {
                 if fields.contains_key("keyword") {
-                    source_columns.push(format!("\"{}.keyword\" TEXT", name));
+                    source_columns.push(format!("\"{name}.keyword\" TEXT"));
                 }
             }
         }
@@ -53,7 +53,7 @@ pub fn create_index_tables(
         .collect();
 
     if !text_columns.is_empty() {
-        let fts_cols: Vec<String> = text_columns.iter().map(|c| format!("\"{}\"", c)).collect();
+        let fts_cols: Vec<String> = text_columns.iter().map(|c| format!("\"{c}\"")).collect();
         let create_fts = format!(
             "CREATE VIRTUAL TABLE IF NOT EXISTS _fts USING fts5({}, content='_source', content_rowid='rowid');",
             fts_cols.join(", ")
@@ -74,17 +74,17 @@ fn create_fts_triggers(
 ) -> Result<(), rusqlite::Error> {
     let col_list: String = text_columns
         .iter()
-        .map(|c| format!("\"{}\"", c))
+        .map(|c| format!("\"{c}\""))
         .collect::<Vec<_>>()
         .join(", ");
     let new_json_extracts: String = text_columns
         .iter()
-        .map(|c| format!("json_extract(new._source, '$.{}')", c))
+        .map(|c| format!("json_extract(new._source, '$.{c}')"))
         .collect::<Vec<_>>()
         .join(", ");
     let old_json_extracts: String = text_columns
         .iter()
-        .map(|c| format!("json_extract(old._source, '$.{}')", c))
+        .map(|c| format!("json_extract(old._source, '$.{c}')"))
         .collect::<Vec<_>>()
         .join(", ");
 

@@ -16,8 +16,185 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+
+// ─── Resource Measurement ───────────────────────────────────────────────────
+
+/// Get RSS of a process in KB via `ps -o rss= -p <pid>`.
+fn measure_rss_kb(pid: u32) -> Option<u64> {
+    let output = Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid.to_string()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout);
+    s.trim().parse::<u64>().ok()
+}
+
+/// Get OpenSearch RSS in KB by reading /proc/1/status inside the container.
+/// PID 1 in the container is the Java (OpenSearch) process.
+/// This reads VmRSS, the same metric as `ps -o rss=` on the host for es-sqlite.
+fn measure_container_rss_kb(container: &str) -> Option<u64> {
+    let output = Command::new("docker")
+        .args(["exec", container, "cat", "/proc/1/status"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout);
+    for line in s.lines() {
+        if line.starts_with("VmRSS:") {
+            // Line format: "VmRSS:\t 1163728 kB"
+            return line
+                .split_whitespace()
+                .nth(1)
+                .and_then(|v| v.parse::<u64>().ok());
+        }
+    }
+    None
+}
+
+/// Get total file size of all files in a directory (recursive), in bytes.
+fn measure_dir_size_bytes(path: &str) -> u64 {
+    fn walk(dir: &Path) -> u64 {
+        let mut total = 0u64;
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_dir() {
+                    total += walk(&p);
+                } else if let Ok(meta) = p.metadata() {
+                    total += meta.len();
+                }
+            }
+        }
+        total
+    }
+    walk(Path::new(path))
+}
+
+/// Get OpenSearch index store size in bytes via `_cat/indices` API.
+async fn measure_opensearch_disk_bytes(base: &str, index: &str) -> Option<u64> {
+    let client = http();
+    let resp = client
+        .get(format!("{base}/_cat/indices/{index}?format=json&bytes=b"))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body: Value = resp.json().await.ok()?;
+    // Response is an array of objects, get store.size from first entry
+    body.as_array()?
+        .first()?
+        .get("store.size")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse::<u64>().ok())
+}
+
+// ─── Continuous Memory Sampler ──────────────────────────────────────────────
+
+/// Background memory sampler that collects RSS at regular intervals.
+struct MemorySampler {
+    samples_kb: Arc<Mutex<Vec<u64>>>,
+    stop: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct MemoryStats {
+    min_kb: u64,
+    avg_kb: u64,
+    peak_kb: u64,
+    samples: usize,
+}
+
+enum SamplerTarget {
+    Process(u32),
+    DockerContainer(String),
+}
+
+impl MemorySampler {
+    fn start(target: SamplerTarget, interval: Duration) -> Self {
+        let samples_kb = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+
+        let s = Arc::clone(&samples_kb);
+        let st = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            while !st.load(Ordering::Relaxed) {
+                let measurement = match &target {
+                    SamplerTarget::Process(pid) => measure_rss_kb(*pid),
+                    SamplerTarget::DockerContainer(name) => measure_container_rss_kb(name),
+                };
+                if let Some(kb) = measurement {
+                    s.lock().unwrap().push(kb);
+                }
+                std::thread::sleep(interval);
+            }
+        });
+
+        Self {
+            samples_kb,
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    /// Stop sampling, join the thread, and return stats.
+    fn stop_and_report(mut self) -> Option<MemoryStats> {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+        let samples = self.samples_kb.lock().unwrap();
+        if samples.is_empty() {
+            return None;
+        }
+        let min_kb = *samples.iter().min().unwrap();
+        let peak_kb = *samples.iter().max().unwrap();
+        let avg_kb = samples.iter().sum::<u64>() / samples.len() as u64;
+        Some(MemoryStats {
+            min_kb,
+            avg_kb,
+            peak_kb,
+            samples: samples.len(),
+        })
+    }
+
+    /// Take a snapshot of current stats without stopping.
+    fn snapshot(&self) -> Option<MemoryStats> {
+        let samples = self.samples_kb.lock().unwrap();
+        if samples.is_empty() {
+            return None;
+        }
+        let min_kb = *samples.iter().min().unwrap();
+        let peak_kb = *samples.iter().max().unwrap();
+        let avg_kb = samples.iter().sum::<u64>() / samples.len() as u64;
+        Some(MemoryStats {
+            min_kb,
+            avg_kb,
+            peak_kb,
+            samples: samples.len(),
+        })
+    }
+
+    /// Reset samples (e.g. between steps) without stopping the sampler.
+    fn reset(&self) {
+        self.samples_kb.lock().unwrap().clear();
+    }
+}
+
+struct StepResourceMetrics {
+    memory_stats: Option<MemoryStats>,
+    disk_bytes: Option<u64>,
+}
 
 const CONTAINER_NAME: &str = "es-sqlite-bench-opensearch";
 const OPENSEARCH_IMAGE: &str = "opensearchproject/opensearch:2.17.1";
@@ -25,7 +202,8 @@ const CACHE_DIR: &str = "tests/.cache/gutenberg_books";
 
 // ─── Server Management ──────────────────────────────────────────────────────
 
-fn start_es_sqlite() -> String {
+/// Start es-sqlite and return (url, pid).
+fn start_es_sqlite() -> (String, u32) {
     // Kill any existing es-sqlite on port 19222
     let _ = Command::new("pkill")
         .args(["-f", "es-sqlite.*19222"])
@@ -50,6 +228,7 @@ fn start_es_sqlite() -> String {
         .args(["--port", "19222", "--data-dir", &data_dir])
         .spawn()
         .expect("start es-sqlite");
+    let pid = child.id();
     // Detach so cleanup_servers() handles termination via pkill
     std::thread::spawn(move || {
         let _ = child.wait();
@@ -63,7 +242,7 @@ fn start_es_sqlite() -> String {
             .output()
         {
             if output.status.success() {
-                return url.to_string();
+                return (url.to_string(), pid);
             }
         }
         std::thread::sleep(Duration::from_millis(500));
@@ -756,11 +935,30 @@ fn main() {
         eprintln!("  Phase 1: Benchmarking es-sqlite");
         eprintln!("═══════════════════════════════════════════════════════════════");
 
-        let es_url = start_es_sqlite();
-        eprintln!("es-sqlite ready at {es_url}");
+        let (es_url, es_pid) = start_es_sqlite();
+        eprintln!("es-sqlite ready at {es_url} (pid {es_pid})");
+
+        // Start continuous memory sampler (500ms intervals)
+        let es_sampler = MemorySampler::start(
+            SamplerTarget::Process(es_pid),
+            Duration::from_millis(500),
+        );
+
+        // Let idle measurement settle
+        std::thread::sleep(Duration::from_secs(2));
+        let es_idle_stats = es_sampler.snapshot();
+        if let Some(ref stats) = es_idle_stats {
+            eprintln!(
+                "  [es-sqlite] Idle RSS: {} (avg over {} samples)",
+                format_memory_kb(stats.avg_kb),
+                stats.samples
+            );
+        }
 
         // es_results[step_idx] = (label, index_ms, [(query_name, avg_us)])
         let mut es_results: Vec<(String, u128, Vec<(String, u128)>)> = Vec::new();
+        let mut es_resources: Vec<StepResourceMetrics> = Vec::new();
+        let data_dir = format!("{}/target/bench-data", env!("CARGO_MANIFEST_DIR"));
 
         for (label, max_chars) in &steps {
             let docs = truncate_corpus(&corpus, *max_chars);
@@ -780,6 +978,9 @@ fn main() {
                 docs.len()
             );
 
+            // Reset sampler for this step
+            es_sampler.reset();
+
             cleanup(&es_url, &idx).await;
             create_index(&es_url, &idx, gutenberg_mappings()).await;
 
@@ -791,6 +992,21 @@ fn main() {
             let query_results =
                 bench_queries_single(&es_url, &idx, &queries, iterations).await;
 
+            // Snapshot memory stats for this step (covers indexing + queries)
+            let step_stats = es_sampler.snapshot();
+            let disk_bytes = measure_dir_size_bytes(&data_dir);
+
+            if let Some(ref stats) = step_stats {
+                eprintln!(
+                    "    RSS: avg {} | peak {} | min {} ({} samples)",
+                    format_memory_kb(stats.avg_kb),
+                    format_memory_kb(stats.peak_kb),
+                    format_memory_kb(stats.min_kb),
+                    stats.samples
+                );
+            }
+            eprintln!("    Disk usage:      {}", format_bytes(disk_bytes as usize));
+
             for (name, avg) in &query_results {
                 eprintln!("    {name:<21} {avg:>8} µs");
             }
@@ -798,9 +1014,14 @@ fn main() {
 
             cleanup(&es_url, &idx).await;
             es_results.push((label.to_string(), index_ms, query_results));
+            es_resources.push(StepResourceMetrics {
+                memory_stats: step_stats,
+                disk_bytes: Some(disk_bytes),
+            });
         }
 
-        // Kill es-sqlite
+        // Stop sampler and kill es-sqlite
+        let _es_overall_stats = es_sampler.stop_and_report();
         let _ = Command::new("pkill")
             .args(["-f", "es-sqlite.*19222"])
             .output();
@@ -815,6 +1036,8 @@ fn main() {
 
         // os_results[step_idx] = Option<(index_ms, [(query_name, avg_us)])>
         let mut os_results: Vec<Option<(u128, Vec<(String, u128)>)>> = Vec::new();
+        let mut os_resources: Vec<Option<StepResourceMetrics>> = Vec::new();
+        let mut os_idle_stats: Option<MemoryStats> = None;
 
         if docker_available {
             eprintln!();
@@ -848,9 +1071,33 @@ fn main() {
                     None => {
                         eprintln!("    Failed to start OpenSearch, skipping step {label}");
                         os_results.push(None);
+                        os_resources.push(None);
                         continue;
                     }
                 };
+
+                // Start continuous memory sampler for OpenSearch (500ms intervals)
+                let os_sampler = MemorySampler::start(
+                    SamplerTarget::DockerContainer(CONTAINER_NAME.to_string()),
+                    Duration::from_millis(500),
+                );
+
+                // Let idle measurement settle
+                std::thread::sleep(Duration::from_secs(2));
+                if let Some(idle_stats) = os_sampler.snapshot() {
+                    eprintln!(
+                        "    Idle Java RSS: {} (avg over {} samples)",
+                        format_memory_kb(idle_stats.avg_kb),
+                        idle_stats.samples
+                    );
+                    // Store the first idle measurement for the summary table
+                    if os_idle_stats.is_none() {
+                        os_idle_stats = Some(idle_stats);
+                    }
+                }
+
+                // Reset for this step's workload
+                os_sampler.reset();
 
                 create_index(&os_url, &idx, gutenberg_mappings()).await;
 
@@ -865,6 +1112,23 @@ fn main() {
                 let query_results =
                     bench_queries_single(&os_url, &idx, &queries, iterations).await;
 
+                // Snapshot memory stats (covers indexing + queries)
+                let step_stats = os_sampler.stop_and_report();
+                let os_disk_bytes = measure_opensearch_disk_bytes(&os_url, &idx).await;
+
+                if let Some(ref stats) = step_stats {
+                    eprintln!(
+                        "    RSS: avg {} | peak {} | min {} ({} samples)",
+                        format_memory_kb(stats.avg_kb),
+                        format_memory_kb(stats.peak_kb),
+                        format_memory_kb(stats.min_kb),
+                        stats.samples
+                    );
+                }
+                if let Some(bytes) = os_disk_bytes {
+                    eprintln!("    Disk usage:         {}", format_bytes(bytes as usize));
+                }
+
                 for (name, avg) in &query_results {
                     eprintln!("    {name:<21} {avg:>8} µs");
                 }
@@ -874,6 +1138,10 @@ fn main() {
                 stop_opensearch();
 
                 os_results.push(Some((index_ms, query_results)));
+                os_resources.push(Some(StepResourceMetrics {
+                    memory_stats: step_stats,
+                    disk_bytes: os_disk_bytes,
+                }));
             }
 
             eprintln!();
@@ -883,6 +1151,7 @@ fn main() {
             eprintln!("Docker not available, skipping OpenSearch benchmarks.");
             for _ in &steps {
                 os_results.push(None);
+                os_resources.push(None);
             }
         }
 
@@ -996,6 +1265,96 @@ fn main() {
             }
         }
 
+        // ── Resource Usage Table ──────────────────────────────────────────
+        eprintln!();
+        eprintln!("═══════════════════════════════════════════════════════════════════════════════════════════════════");
+        eprintln!("  RESOURCE USAGE — Memory (RSS, continuous sampling) & Disk");
+        eprintln!("═══════════════════════════════════════════════════════════════════════════════════════════════════");
+        eprintln!();
+
+        eprintln!(
+            "  {:>10} │ {:>22} │ {:>22} │ {:>12} │ {:>12} │ {:>12} │ {:>12}",
+            "", "es-sqlite RSS", "OpenSearch RSS", "", "Disk", "", ""
+        );
+        eprintln!(
+            "  {:>10} │ {:>10} {:>10} │ {:>10} {:>10} │ {:>12} │ {:>12} │ {:>12} │ {:>12}",
+            "Body Size", "avg", "peak", "avg", "peak", "Ratio(avg)", "es-sqlite", "OpenSearch", "Ratio"
+        );
+        eprintln!(
+            "  {:─>10}─┼─{:─>10}─{:─>10}─┼─{:─>10}─{:─>10}─┼─{:─>12}─┼─{:─>12}─┼─{:─>12}─┼─{:─>12}",
+            "", "", "", "", "", "", "", "", ""
+        );
+
+        // Idle row
+        {
+            let (es_avg, es_peak) = match &es_idle_stats {
+                Some(s) => (format_memory_kb(s.avg_kb), format_memory_kb(s.peak_kb)),
+                None => ("N/A".to_string(), "N/A".to_string()),
+            };
+            let (os_avg, os_peak) = match &os_idle_stats {
+                Some(s) => (format_memory_kb(s.avg_kb), format_memory_kb(s.peak_kb)),
+                None => ("N/A".to_string(), "N/A".to_string()),
+            };
+            let ratio = match (&es_idle_stats, &os_idle_stats) {
+                (Some(e), Some(o)) if e.avg_kb > 0 => {
+                    format!("{:.0}x less", o.avg_kb as f64 / e.avg_kb as f64)
+                }
+                _ => "—".to_string(),
+            };
+            eprintln!(
+                "  {:>10} │ {:>10} {:>10} │ {:>10} {:>10} │ {:>12} │ {:>12} │ {:>12} │ {:>12}",
+                "idle", es_avg, es_peak, os_avg, os_peak, ratio, "—", "—", "—"
+            );
+        }
+
+        // Per-step rows
+        for (si, (label, _, _)) in es_results.iter().enumerate() {
+            let es_res = &es_resources[si];
+            let os_res = os_resources.get(si).and_then(|r| r.as_ref());
+
+            let (es_avg, es_peak) = match &es_res.memory_stats {
+                Some(s) => (format_memory_kb(s.avg_kb), format_memory_kb(s.peak_kb)),
+                None => ("N/A".to_string(), "N/A".to_string()),
+            };
+            let (os_avg, os_peak) = match os_res.and_then(|r| r.memory_stats.as_ref()) {
+                Some(s) => (format_memory_kb(s.avg_kb), format_memory_kb(s.peak_kb)),
+                None => ("N/A".to_string(), "N/A".to_string()),
+            };
+            let mem_ratio = match (
+                es_res.memory_stats.as_ref(),
+                os_res.and_then(|r| r.memory_stats.as_ref()),
+            ) {
+                (Some(e), Some(o)) if e.avg_kb > 0 => {
+                    format!("{:.0}x less", o.avg_kb as f64 / e.avg_kb as f64)
+                }
+                _ => "—".to_string(),
+            };
+
+            let es_disk_str = es_res
+                .disk_bytes
+                .map(|b| format_bytes(b as usize))
+                .unwrap_or_else(|| "N/A".to_string());
+            let os_disk_str = os_res
+                .and_then(|r| r.disk_bytes)
+                .map(|b| format_bytes(b as usize))
+                .unwrap_or_else(|| "N/A".to_string());
+            let disk_ratio = match (es_res.disk_bytes, os_res.and_then(|r| r.disk_bytes)) {
+                (Some(e), Some(o)) if e > 0 && o > 0 => {
+                    let r = o as f64 / e as f64;
+                    if r >= 1.0 {
+                        format!("{r:.1}x less")
+                    } else {
+                        format!("{:.1}x more", 1.0 / r)
+                    }
+                }
+                _ => "—".to_string(),
+            };
+
+            eprintln!(
+                "  {label:>10} │ {es_avg:>10} {es_peak:>10} │ {os_avg:>10} {os_peak:>10} │ {mem_ratio:>12} │ {es_disk_str:>12} │ {os_disk_str:>12} │ {disk_ratio:>12}"
+            );
+        }
+
         eprintln!();
         eprintln!("Done. {} documents benchmarked at 5 body size steps.", corpus.len());
 
@@ -1010,5 +1369,15 @@ fn format_bytes(bytes: usize) -> String {
         format!("{:.1}KB", bytes as f64 / 1_000.0)
     } else {
         format!("{bytes}B")
+    }
+}
+
+fn format_memory_kb(kb: u64) -> String {
+    if kb >= 1_048_576 {
+        format!("{:.1} GB", kb as f64 / 1_048_576.0)
+    } else if kb >= 1024 {
+        format!("{:.1} MB", kb as f64 / 1024.0)
+    } else {
+        format!("{kb} KB")
     }
 }

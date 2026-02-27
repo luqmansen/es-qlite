@@ -1,26 +1,26 @@
 # es-sqlite
 
-An OpenSearch/Elasticsearch-compatible REST API server backed by SQLite's FTS5 full-text search engine. Drop-in replacement for common OpenSearch operations using a single lightweight binary with no external dependencies.
+OpenSearch/Elasticsearch-compatible REST API, but it's just SQLite under the hood. One binary, no JVM, no cluster config. Uses FTS5 for full-text search and pretends to be OpenSearch well enough that existing clients don't notice.
 
 ## Why?
 
-For fun
+For fun (jk, i fed up with `SearchPhaseExecutionException[Failed to execute phase [query_fetch], all shards failed]`)
 
 ## Quick Start
 
 ```bash
-# Build
+# build it
 cargo build --release
 
-# Run (defaults to port 9200, data in ./data/)
+# run it (defaults to port 9200, data in ./data/)
 ./target/release/es-sqlite
 
-# Or with custom settings
+# or tweak stuff
 ./target/release/es-sqlite --port 9200 --data-dir ./data --host 0.0.0.0
 ```
 
 ```bash
-# Create an index
+# create an index
 curl -X PUT localhost:9200/my-index -H 'Content-Type: application/json' -d '{
   "mappings": {
     "properties": {
@@ -31,14 +31,14 @@ curl -X PUT localhost:9200/my-index -H 'Content-Type: application/json' -d '{
   }
 }'
 
-# Index a document
+# throw in a document
 curl -X POST localhost:9200/my-index/_doc/1 -H 'Content-Type: application/json' -d '{
   "title": "Introduction to Full-Text Search",
   "price": 29.99,
   "status": "published"
 }'
 
-# Search
+# search it
 curl -X POST localhost:9200/my-index/_search -H 'Content-Type: application/json' -d '{
   "query": {
     "match": {"title": "full-text search"}
@@ -46,28 +46,19 @@ curl -X POST localhost:9200/my-index/_search -H 'Content-Type: application/json'
 }'
 ```
 
-## Running Tests
+## Tests
 
-Tests start the server automatically -- no manual server needed:
+Server starts itself, just run:
 
 ```bash
-# Run all tests (integration + YAML specs)
-cargo test
-
-# Run only OpenSearch client compatibility tests
-cargo test --test opensearch_client
-
-# Run only YAML REST API spec tests
-cargo test --test yaml_runner
-
-# Run comparison tests vs real OpenSearch (requires Docker)
-cargo test --test comparison -- --test-threads=1
-
-# Run performance benchmarks with real Gutenberg books (requires Docker)
-cargo bench --bench gutenberg_bench
+cargo test                                          # everything
+cargo test --test opensearch_client                 # OpenSearch client compat
+cargo test --test yaml_runner                       # YAML REST API specs
+cargo test --test comparison -- --test-threads=1    # vs real OpenSearch (needs Docker)
+cargo bench --bench gutenberg_bench                 # benchmarks with Gutenberg books (needs Docker)
 ```
 
-## Implemented Endpoints
+## What's Implemented
 
 ### Index Management
 
@@ -122,9 +113,7 @@ cargo bench --bench gutenberg_bench
 | `/_cluster/health` | `GET` | Cluster health (always green) |
 | `/_cat/indices` | `GET` | List indices with doc counts |
 
-**Total: 26 endpoint-method combinations across 18 routes**
-
-## Supported Query DSL
+## Query DSL
 
 | Query Type | Description | Translation |
 |---|---|---|
@@ -141,11 +130,11 @@ cargo bench --bench gutenberg_bench
 | `function_score` | Wrapper with scoring functions | Delegates to inner query (scores ignored) |
 | `wrapper` | Base64-encoded query wrapper | Decoded and parsed as normal query |
 
-Scoring uses SQLite FTS5's built-in BM25 with default parameters (k1=1.2, b=0.75), matching OpenSearch defaults. Ranking order is comparable but exact scores will differ from OpenSearch due to IDF scope differences.
+Scoring uses FTS5's built-in BM25 (k1=1.2, b=0.75), same defaults as OpenSearch. Ranking order is comparable but exact scores will differ due to IDF scope differences.
 
 ## Aggregations
 
-Terms aggregations are supported, translating to SQL `GROUP BY` queries.
+Terms aggregations work -- they just become SQL `GROUP BY` under the hood.
 
 ```bash
 # Terms aggregation
@@ -184,18 +173,18 @@ curl -X POST localhost:9200/my-index/_search -H 'Content-Type: application/json'
 }'
 ```
 
-**Aggregation features:**
-- `terms` aggregation with `field` and `size` parameters
-- `typed_keys=true` query parameter (prefixes keys with `sterms#`)
-- Both `aggs` and `aggregations` field names accepted
-- Works with JSON array fields (auto-detects and uses `json_each`)
-- Aggregations on `.keyword` sub-fields (suffix automatically stripped)
+**What works:**
+- `terms` aggregation with `field` and `size`
+- `typed_keys=true` (prefixes keys with `sterms#`)
+- Both `aggs` and `aggregations` accepted
+- JSON array fields (auto-detects, uses `json_each`)
+- `.keyword` sub-fields (suffix stripped automatically)
 - Multi-index aggregation with bucket merging
-- Empty buckets returned when no documents match (prevents frontend crashes)
+- Empty buckets when nothing matches
 
 ## Index Aliases
 
-Aliases allow querying one or more indices under a single name. Aliases are persisted to disk and survive server restarts.
+Point one name at one or more indices. Persisted to disk, survives restarts.
 
 ```bash
 # Create an alias
@@ -231,7 +220,7 @@ curl localhost:9200/_aliases
 
 ## Sorting
 
-Results can be sorted by any non-text field.
+Sort by any non-text field
 
 ```bash
 # Sort by price ascending
@@ -254,7 +243,7 @@ curl -X POST localhost:9200/my-index/_search -H 'Content-Type: application/json'
 
 ## Multi-Index Search
 
-Search across multiple indices using comma-separated names or wildcard patterns.
+Comma-separated or wildcards, both work.
 
 ```bash
 # Comma-separated indices
@@ -272,7 +261,7 @@ curl -X POST 'localhost:9200/logs-*/_search' \
 
 ## Delete by Query
 
-Delete all documents matching a query.
+Nuke docs that match a query.
 
 ```bash
 curl -X POST localhost:9200/my-index/_delete_by_query \
@@ -284,15 +273,15 @@ curl -X POST localhost:9200/my-index/_delete_by_query \
 # Response: { "deleted": 5, "total": 5, ... }
 ```
 
-## Storage Architecture
+## How It Works
 
-- **One SQLite database per index** -- Clean isolation, simple deletion, no cross-index locking
-- **WAL mode** -- Concurrent reads with serialized writes
-- **External content FTS5** -- Full-text index references `_source` table, avoiding duplicate text storage (~50% disk savings)
-- **Automatic triggers** -- AFTER INSERT/UPDATE/DELETE triggers keep FTS5 in sync with `_source`
-- **Dynamic mapping** -- Auto-detects field types on first document, adds columns via `ALTER TABLE`
+- **One SQLite DB per index** -- clean isolation, just delete the file to drop an index
+- **WAL mode** -- concurrent reads, serialized writes
+- **External content FTS5** -- full-text index references `_source` table, no duplicate text (~50% disk savings)
+- **Auto triggers** -- INSERT/UPDATE/DELETE triggers keep FTS5 in sync
+- **Dynamic mapping** -- auto-detects field types on first doc, adds columns via `ALTER TABLE`
 
-### Schema per index
+### What each index looks like
 
 ```
 _meta           -- key/value store for mappings, settings, and aliases (JSON)
@@ -301,7 +290,7 @@ _fts            -- FTS5 virtual table (external content mode, text fields only)
 _fts_ai/ad/au   -- Triggers to sync FTS5 with _source
 ```
 
-### Supported Field Types
+### Field types
 
 | OpenSearch Type | SQLite Type | Notes |
 |---|---|---|
@@ -313,18 +302,17 @@ _fts_ai/ad/au   -- Triggers to sync FTS5 with _source
 | `date` | `TEXT` | Auto-detected from RFC3339/ISO8601 |
 | `object` | `TEXT` | Stored as nested JSON |
 
-## Performance Benchmark
+## Benchmarks
 
-Performance benchmarks are run separately via `cargo bench` using real Project Gutenberg books (1600 documents). The benchmark tests at increasing document body sizes (1K, 5K, 10K, 50K, 100K chars) to show how performance scales. Results below are from [CI (GitHub Actions, Ubuntu 24.04)](https://github.com/luqmansen/es-sqlite/actions/runs/22474762499/job/65099316921), not a tuned local machine.
+Benchmarked with 1600 real Project Gutenberg books at increasing body sizes (1K to 100K chars). Numbers are from [CI (GitHub Actions)](https://github.com/luqmansen/es-sqlite/actions/runs/22474762499/job/65099316921), not a tuned machine.
 
 ```bash
-# Run benchmarks (requires Docker for OpenSearch comparison)
-cargo bench --bench gutenberg_bench
+cargo bench --bench gutenberg_bench  # needs Docker for OpenSearch comparison
 ```
 
-The corpus is automatically downloaded from the [Gutendex API](https://gutendex.com/) on first run and cached locally (5 concurrent workers, per-file caching to disk). Benchmarks cover: `match_all`, `match`, `multi_match`, `bool` must+filter, `terms` aggregation, `sort`, `query_string`, and `filtered_agg` queries.
+Corpus auto-downloads from [Gutendex](https://gutendex.com/) on first run and gets cached locally.
 
-**Results** (1600 Gutenberg books, es-sqlite vs OpenSearch 2.17.1, GitHub Actions runner):
+**es-sqlite vs OpenSearch 2.17.1** (1600 books, GitHub Actions runner):
 
 | Query | 1K (avg 999B) | 5K (avg 5.0KB) | 10K (avg 9.9KB) | 50K (avg 48.9KB) | 100K (avg 96.3KB) |
 |---|---|---|---|---|---|
@@ -340,19 +328,18 @@ The corpus is automatically downloaded from the [Gutendex API](https://gutendex.
 | filtered_agg | **45ms** vs 50ms (1.1x) | 53ms vs **49ms** (1.1x OS) | 69ms vs **52ms** (1.3x OS) | 228ms vs **49ms** (4.6x OS) | 444ms vs **49ms** (9.1x OS) |
 | **Bulk index** | **623ms** vs 1240ms (2.0x) | **1.1s** vs 2.5s (2.2x) | **1.6s** vs 2.5s (1.5x) | **4.8s** vs 6.2s (1.3x) | **8.9s** vs 10.8s (1.2x) |
 
-**Key takeaways:**
-- es-sqlite is **1.1-2.1x faster** for search/match/sort queries across all body sizes, with the advantage growing at larger document sizes for `match_all`, `multi_match`, and `query_string`
-- Bulk indexing is consistently **1.2-2.2x faster** at all sizes
-- `query_string` uses FTS5 (not LIKE fallback), keeping it **1.2-1.6x faster** than OpenSearch at all sizes
-- OpenSearch dominates on `terms_agg` and `filtered_agg` at larger body sizes (10K+), where its columnar aggregation engine scales better than SQLite's `GROUP BY` on JSON-extracted fields -- up to **10.9x faster** at 100K
-- At 100K body sizes, `bool_must_filter`, `sort_popularity`, and `sort_multi` converge to roughly equal performance between both engines
-- These are CI numbers (shared GitHub Actions runner); local results may differ due to CPU, disk, and JVM warm-up variance
+**tl;dr:**
+- **1.1-2.1x faster** on search/match/sort queries, bigger advantage at larger doc sizes
+- Bulk indexing **1.2-2.2x faster** across the board
+- OpenSearch wins on `terms_agg` and `filtered_agg` at 10K+ body sizes -- its columnar aggregation engine just scales better than SQLite's `GROUP BY` on JSON fields (up to **10.9x faster** at 100K)
+- At 100K, `bool_must_filter` and sort queries are roughly a tie
+- CI numbers on a shared runner, your mileage will vary
 
-#### Resource Benchmark (Memory & Disk)
+#### Memory & Disk
 
-The same benchmark also measures memory (RSS) and disk usage for both engines. es-sqlite runs as a single lightweight process with SQLite storage, while OpenSearch runs a full JVM-based server. Memory is measured via continuous sampling (every 500ms) using `ps -o rss=` for es-sqlite and `/proc/1/status` VmRSS inside the container for OpenSearch. Note: the environments differ (native macOS vs Linux container under Docker Desktop), so these numbers are indicative rather than a precise comparison.
+Also measured RSS memory. es-sqlite is one process, OpenSearch is a whole JVM. Not exactly apples-to-apples (native macOS vs Docker container), but you get the idea.
 
-**Memory (RSS)** (1593 Gutenberg books, local macOS, OpenSearch JVM heap `-Xms512m -Xmx512m`):
+**Memory (RSS)** (1593 books, OpenSearch JVM heap `-Xms512m -Xmx512m`):
 
 | Body Size | es-sqlite (avg) | es-sqlite (peak) | OpenSearch (avg) | OpenSearch (peak) | Ratio (avg) |
 |---|---|---|---|---|---|
@@ -363,15 +350,11 @@ The same benchmark also measures memory (RSS) and disk usage for both engines. e
 | 50K | **40.3 MB** | 48.1 MB | 1.1 GB | 1.1 GB | **27x less** |
 | 100K | **54.0 MB** | 79.4 MB | 1.1 GB | 1.3 GB | **22x less** |
 
-**Key takeaways:**
-- es-sqlite uses **22-195x less memory** than OpenSearch across all document sizes
-- Idle: **5.5 MB** vs **1.0 GB** — the JVM heap (512 MB) plus off-heap memory (Lucene segments, direct buffers, thread stacks) dominates OpenSearch's footprint
-- At 100K body size with 1593 documents, es-sqlite peaks at **79 MB** vs OpenSearch's **1.3 GB**
-- es-sqlite memory grows sub-linearly with data size (SQLite's page cache is bounded); OpenSearch stays relatively flat due to its pre-allocated JVM heap
+**basically:** OpenSearch's ~1 GB floor is the JVM heap, not the data. es-sqlite idles at **5.5 MB** because there's no VM. If your use case fits, you skip that whole tax. Memory grows sub-linearly since SQLite's page cache is bounded.
 
-## OpenSearch API Compatibility
+## API Compatibility
 
-Tested with the official [`opensearch` Rust crate](https://crates.io/crates/opensearch) v2.3.0 and validated against a real OpenSearch 2.17.1 instance.
+Tested with the [`opensearch` Rust crate](https://crates.io/crates/opensearch) v2.3.0 and validated against real OpenSearch 2.17.1.
 
 | Category | Compatible |
 |---|---|
@@ -391,21 +374,9 @@ Tested with the official [`opensearch` Rust crate](https://crates.io/crates/open
 | Pagination (`from`/`size` via query params and body) | Yes |
 | Cluster health, `_cat/indices` | Yes (stubbed) |
 
-### Known limitations
+## YAML REST API Spec Tests
 
-- **Single node only** -- Obviously
-- **Only terms aggregations** -- Metric aggregations (avg, sum, cardinality) and nested/pipeline aggregations are not supported
-- **No scroll/search_after** -- Only basic `from`/`size` pagination
-- **No _source filtering** -- Always returns full `_source`
-- **No stored fields** -- All fields come from `_source` JSON
-- **No index open/close** -- Indices are always open
-- **No cluster coordination** -- Single-process, single-node architecture
-- **BM25 scores differ** -- Same parameters as OpenSearch (k1=1.2, b=0.75) but IDF scope is per-index (inherent to SQLite FTS5)
-- **FTS5 text columns are fixed at creation** -- New text fields added via dynamic mapping won't be full-text searchable; queries automatically fall back to `LIKE`-based matching when FTS columns are missing
-
-## OpenSearch YAML REST API Spec Tests
-
-All 408 YAML spec files (from 114 categories) are vendored from the [OpenSearch repository](https://github.com/opensearch-project/OpenSearch/tree/main/rest-api-spec/src/main/resources/rest-api-spec/test) and run against es-sqlite with explicit pass/skip classification.
+408 YAML spec files (114 categories) vendored from the [OpenSearch repo](https://github.com/opensearch-project/OpenSearch/tree/main/rest-api-spec/src/main/resources/rest-api-spec/test), run against es-sqlite.
 
 ```
 Expected to pass:  114 tests   (regression = hard failure)
@@ -414,7 +385,7 @@ Known failures:    398 tests   (tracked for future work)
 Regressions:       0
 ```
 
-### Passing spec categories
+### What passes
 
 | Category | Tests | What's covered |
 |---|---|---|
@@ -441,7 +412,7 @@ Regressions:       0
 | `update` | 4 | Upsert, doc_as_upsert, error messages, require_alias |
 | `ingest` / `mtermvectors` | 2 | Error handling |
 
-### Skipped spec categories (not supported)
+### What doesn't (yet)
 
 | Reason | Count | Examples |
 |---|---|---|
@@ -456,7 +427,7 @@ Regressions:       0
 | Cluster/node management | varies | snapshot, suggest, explain, field_caps, scripts, PIT, etc. |
 | Other | varies | refresh param, stored fields, error_trace, shard headers |
 
-## Project Structure
+## Layout
 
 ```
 src/

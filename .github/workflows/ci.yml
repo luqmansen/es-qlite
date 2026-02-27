@@ -28,17 +28,6 @@ jobs:
         run: cargo build --release
       - name: Build test binaries
         run: cargo test --no-run --all-targets
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-artifacts
-          retention-days: 1
-          path: |
-            target/release/es-sqlite
-            target/debug/deps/opensearch_client-*
-            target/debug/deps/yaml_runner-*
-            target/debug/deps/comparison-*
-            target/release/deps/gutenberg_bench-*
 
   test-unit:
     name: Unit & Integration Tests

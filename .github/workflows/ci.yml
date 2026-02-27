@@ -86,7 +86,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: tests/.cache/gutenberg_books
-          key: gutenberg-corpus-v1
+          key: gutenberg-corpus-v2
       - name: Run benchmarks
         run: cargo bench --bench gutenberg_bench 2>&1 | tee bench-output.txt
       - name: Upload benchmark results

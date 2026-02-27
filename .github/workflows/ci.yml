@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: Check & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Format check
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Build
+        run: cargo build --release
+
+  test-unit:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run opensearch_client tests
+        run: cargo test --test opensearch_client
+      - name: Run YAML spec tests
+        run: cargo test --test yaml_runner
+
+  test-comparison:
+    name: Comparison Tests (vs OpenSearch)
+    runs-on: ubuntu-latest
+    needs: check
+    services:
+      opensearch:
+        image: opensearchproject/opensearch:2.17.1
+        ports:
+          - 9200:9200
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          OPENSEARCH_INITIAL_ADMIN_PASSWORD: Admin123!
+          OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+        options: >-
+          --health-cmd "curl -sf http://localhost:9200"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Wait for OpenSearch
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:9200 > /dev/null 2>&1; then
+              echo "OpenSearch ready"
+              break
+            fi
+            echo "Waiting for OpenSearch... ($i)"
+            sleep 2
+          done
+      - name: Run comparison tests
+        run: cargo test --test comparison -- --test-threads=1
+
+  bench:
+    name: Benchmark (Gutenberg)
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache Gutenberg corpus
+        uses: actions/cache@v4
+        with:
+          path: tests/.cache/gutenberg_books
+          key: gutenberg-corpus-v1
+      - name: Run benchmarks
+        run: cargo bench --bench gutenberg_bench 2>&1 | tee bench-output.txt
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: bench-output.txt

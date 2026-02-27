@@ -1,0 +1,38 @@
+[package]
+name = "es-sqlite"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "decompression-gzip", "decompression-deflate"] }
+
+rusqlite = { version = "0.32", features = ["bundled"] }
+tokio-rusqlite = "0.6"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+anyhow = "1"
+parking_lot = "0.12"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+serde_yaml = "0.9"
+tempfile = "3"
+opensearch = "2.3.0"
+url = "2"
+futures = "0.3"
+
+[[bench]]
+name = "gutenberg_bench"
+harness = false
